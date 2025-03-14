@@ -45,6 +45,8 @@ stackrun -c custom.config.js
 
 # Enable tunneling
 stackrun --tunnel
+# or set env var
+TUNNEL=true stackrun
 ```
 
 Configuration file:
