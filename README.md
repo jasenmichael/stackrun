@@ -1,11 +1,13 @@
-# stackrun
+# 🥞 stackrun <span style="transform: scaleX(-1); display: inline-block;">🏃</span>
 
 stackrun is a wrapper around [concurrently](https://www.npmjs.com/package/concurrently) and [cf-tunnel](https://www.npmjs.com/package/cf-tunnel) that simplifies running multiple services with optional integrated Cloudflare tunneling.
 
-<!-- automd:badges color=yellow -->
+<!-- automd:badges name="stackrun" codecov license -->
 
-[![npm version](https://img.shields.io/npm/v/stackrun?color=yellow)](https://npmjs.com/package/stackrun)
-[![npm downloads](https://img.shields.io/npm/dm/stackrun?color=yellow)](https://npm.chart.dev/stackrun)
+[![npm version](https://img.shields.io/npm/v/stackrun)](https://npmjs.com/package/stackrun)
+[![npm downloads](https://img.shields.io/npm/dm/stackrun)](https://npm.chart.dev/stackrun)
+[![codecov](https://img.shields.io/codecov/c/gh/jasenmichael/stackrun)](https://codecov.io/gh/jasenmichael/stackrun)
+[![license](https://img.shields.io/github/license/jasenmichael/stackrun)](https://github.com/jasenmichael/stackrun/blob/main/LICENSE)
 
 <!-- /automd -->
 
