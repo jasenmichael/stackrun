@@ -27,6 +27,18 @@
   "files": [
     "dist"
   ],
+  "keywords": [
+    "bash",
+    "concurrent",
+    "parallel",
+    "concurrently",
+    "command",
+    "sh",
+    "stackrunner",
+    "stackrun",
+    "cloudflare-tunnel",
+    "cf-tunnel"
+  ],
   "scripts": {
     "build": "unbuild",
     "dev": "concurrently \"unbuild --watch\" \"vitest dev\"",
