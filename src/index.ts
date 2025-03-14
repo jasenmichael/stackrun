@@ -1,9 +1,6 @@
 import concurrently, { Command } from "concurrently";
 import consola from "consola";
-// import { join } from "node:path";
-// import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
-// import type { TunnelConfig } from "../../cf-tunnel/dist/index.d.ts";
 import type { TunnelConfig } from "cf-tunnel";
 
 // Get options type from concurrently's function parameters
@@ -105,11 +102,6 @@ export async function stackrun(config: StackrunConfig) {
         env: tunnelEnabled ? tunnelEnv : env,
       };
     });
-
-  // const tempTunnelConfigPath = join(
-  //   process.cwd(),
-  //   ".tmp/stackrun.tunnel.config.json",
-  // );
 
   if (tunnelEnabled) {
     const cfToken =
