@@ -75,9 +75,6 @@ const main = defineCommand({
       consola.error(`No valid configuration found at ${configPath}`);
       process.exit(1);
     }
-    // check if `$(configFile).{ts,js,mjs,cjs,json}` exists
-    // Check if config file exists with any supported extension
-    console.log(configFile);
 
     if (existsSync(configFile)) {
       consola.info(`Running stackrun with the loaded config: ${configFile}`);
