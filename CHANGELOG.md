@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.6
+
+[compare changes](https://github.com/jasenmichael/stackrun/compare/v0.0.5...v0.0.6)
+
+### 🏡 Chore
+
+- Update keywords ([6c50b74](https://github.com/jasenmichael/stackrun/commit/6c50b74))
+
+### ❤️ Contributors
+
+- Jasenmichael <jasen@jasenmichael.com>
+
 ## v0.0.5
 
 [compare changes](https://github.com/jasenmichael/stackrun/compare/v0.0.4...v0.0.5)
