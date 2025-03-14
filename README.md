@@ -1,13 +1,13 @@
 # stackrun
 
+stackrun is a wrapper around [concurrently](https://www.npmjs.com/package/concurrently) and [cf-tunnel](https://www.npmjs.com/package/cf-tunnel) that simplifies running multiple services with optional integrated Cloudflare tunneling.
+
 <!-- automd:badges color=yellow -->
 
 [![npm version](https://img.shields.io/npm/v/stackrun?color=yellow)](https://npmjs.com/package/stackrun)
 [![npm downloads](https://img.shields.io/npm/dm/stackrun?color=yellow)](https://npm.chart.dev/stackrun)
 
 <!-- /automd -->
-
-stackrun is a wrapper around [concurrently](https://www.npmjs.com/package/concurrently) and [cf-tunnel](https://www.npmjs.com/package/cf-tunnel) that simplifies running multiple services with optional integrated Cloudflare tunneling.
 
 ## ✅ Features
 
