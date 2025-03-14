@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.0.3
+
+[compare changes](https://github.com/jasenmichael/stackrun/compare/v0.0.2...v0.0.3)
+
+### 🚀 Enhancements
+
+- Bump cf-tunnel to 0.1.6 ([46af78a](https://github.com/jasenmichael/stackrun/commit/46af78a))
+
+### 🏡 Chore
+
+- Update README.md ([7876369](https://github.com/jasenmichael/stackrun/commit/7876369))
+
+### ❤️ Contributors
+
+- Jasenmichael <jasen@jasenmichael.com>
+
 ## v0.0.2
 
 [compare changes](https://github.com/jasenmichael/stackrun/compare/v0.0.1...v0.0.2)
