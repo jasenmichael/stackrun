@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.0.2
+
+[compare changes](https://github.com/jasenmichael/stackrun/compare/v0.0.1...v0.0.2)
+
+### 🚀 Enhancements
+
+- Use cf-tunnel api, not cli ([c8cd76d](https://github.com/jasenmichael/stackrun/commit/c8cd76d))
+- Use cf-tunnel api, not cli ([8461176](https://github.com/jasenmichael/stackrun/commit/8461176))
+
+### 🏡 Chore
+
+- Apply automated updates ([bfe80f5](https://github.com/jasenmichael/stackrun/commit/bfe80f5))
+- Remove comments ([c93d05b](https://github.com/jasenmichael/stackrun/commit/c93d05b))
+
+### ❤️ Contributors
+
+- Jasenmichael <jasen@jasenmichael.com>
+
 ## v0.0.1
 
 ### 🚀 Enhancements
