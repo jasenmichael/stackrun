@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.7
+
+[compare changes](https://github.com/jasenmichael/stackrun/compare/v0.0.6...v0.0.7)
+
+### 🏡 Chore
+
+- Update README.md ([6c838a4](https://github.com/jasenmichael/stackrun/commit/6c838a4))
+
+### ❤️ Contributors
+
+- Jasenmichael <jasen@jasenmichael.com>
+
 ## v0.0.6
 
 [compare changes](https://github.com/jasenmichael/stackrun/compare/v0.0.5...v0.0.6)
