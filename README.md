@@ -265,16 +265,12 @@ export default defineStackrunConfig({
 
 ## License
 
-<!-- automd:contributors authors=jasenmichael license=MIT -->
+Published under the [MIT](./LICENSE) license.
+
+## Contributors
 
 Published under the [MIT](https://github.com/jasenmichael/stackrun/blob/main/LICENSE) license.
-Made by [community](https://github.com/jasenmichael/stackrun/graphs/contributors) 💛
-<br><br>
-<a href="https://github.com/jasenmichael/stackrun/graphs/contributors">
-<img src="https://contrib.rocks/image?repo=jasenmichael/stackrun" />
-</a>
-
-<!-- /automd -->
+Made by [@jasenmichael](https://github.com/jasenmichael) ❤️
 
 <!-- automd:with-automd -->
 
