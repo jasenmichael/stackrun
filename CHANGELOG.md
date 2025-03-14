@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.8
+
+[compare changes](https://github.com/jasenmichael/stackrun/compare/v0.0.7...v0.0.8)
+
+### 🤖 CI
+
+- Update codecov slug ([9ef51fa](https://github.com/jasenmichael/stackrun/commit/9ef51fa))
+
+### ❤️ Contributors
+
+- Jasenmichael <jasen@jasenmichael.com>
+
 ## v0.0.7
 
 [compare changes](https://github.com/jasenmichael/stackrun/compare/v0.0.6...v0.0.7)
