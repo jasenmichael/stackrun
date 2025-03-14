@@ -11,8 +11,8 @@ importers:
         specifier: ^3.0.2
         version: 3.0.2(magicast@0.3.5)
       cf-tunnel:
-        specifier: ^0.1.4
-        version: 0.1.4
+        specifier: ^0.1.6
+        version: 0.1.6
       citty:
         specifier: ^0.1.6
         version: 0.1.6
@@ -1565,10 +1565,10 @@ packages:
         integrity: sha512-LoPe/D7zioC0REI5W73PeR1e1MLCipRGq/VkovJnd6Df+QVqT+vT33OXCp8QUd7kA7RZrHWxb1B36OQKI/0gOA==,
       }
 
-  cf-tunnel@0.1.4:
+  cf-tunnel@0.1.6:
     resolution:
       {
-        integrity: sha512-eh1lUUGqaCyLbbMXWVeXHI5HrtXlgiKz4aTT/JVD4KFGGWYNKyC6LXGGTL6g2dFiz33vovgWJeI8g6dwU0Madw==,
+        integrity: sha512-lZrwlxFPE0vxrS5mA5tFN+bvio9jOPl8uD62tfYAkHrdjCBtpdFUJ5JazBF1nsK6eCm/yarQzWU7b6vjaEwlKg==,
       }
     hasBin: true
 
@@ -5035,7 +5035,7 @@ snapshots:
 
   caniuse-lite@1.0.30001702: {}
 
-  cf-tunnel@0.1.4:
+  cf-tunnel@0.1.6:
     dependencies:
       commander: 12.1.0
       consola: 3.4.0
