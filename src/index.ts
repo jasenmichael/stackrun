@@ -153,37 +153,25 @@ export async function stackrun(config: StackrunConfig) {
       removeExistingTunnel,
     };
 
-    // const tempDir = join(process.cwd(), ".tmp");
-    // if (!existsSync(tempDir)) {
-    //   mkdirSync(tempDir, { recursive: true });
-    // }
-
-    // writeFileSync(
-    //   tempTunnelConfigPath,
-    //   JSON.stringify(tunnelConfig, undefined, 2),
-    // );
     concurrentlyCommands.push({
       name: "TUNN",
-      // command: `CF_TOKEN=${cfToken} npx cf-tunnel -c ${tempTunnelConfigPath}`,
-      // command: `CF_TOKEN=${cfToken} cf-tunnel --json ${JSON.stringify(tunnelConfig)}`,
-      command: `CF_TOKEN=${cfToken} cf-tunnel --json '${JSON.stringify(tunnelConfig).replace(/'/g, String.raw`\'`)}'`,
+      // command: `CF_TOKEN=${cfToken} npx cf-tunnel --json '${JSON.stringify(tunnelConfig).replace(/'/g, String.raw`\'`)}'`,
+      command: (() => {
+        // Encode config as Base64 to avoid any string escaping issues
+        const configBase64 = Buffer.from(JSON.stringify(tunnelConfig)).toString(
+          "base64",
+        );
 
-      // command: (() => {
-      //   // Encode config as Base64 to avoid any string escaping issues
-      //   const configBase64 = Buffer.from(JSON.stringify(tunnelConfig)).toString(
-      //     "base64",
-      //   );
-
-      //   return `node --no-warnings -e "
-      //     const { cfTunnel } = require('cf-tunnel');
-      //     const tunnelConfig = JSON.parse(Buffer.from('${configBase64}', 'base64').toString());
-      //     cfTunnel(tunnelConfig)
-      //       .catch((error) => {
-      //         console.error(error);
-      //         process.exit(1);
-      //       });
-      //   "`;
-      // })(),
+        return `node --no-warnings -e "
+          const { cfTunnel } = require('cf-tunnel');
+          const tunnelConfig = JSON.parse(Buffer.from('${configBase64}', 'base64').toString());
+          cfTunnel(tunnelConfig)
+            .catch((error) => {
+              console.error(error);
+              process.exit(1);
+            });
+        "`;
+      })(),
       cwd: undefined,
       env: {},
       prefixColor: "red",
@@ -202,8 +190,6 @@ export async function stackrun(config: StackrunConfig) {
     execSync(command, execOptions);
   }
 
-  console.debug("concurrentlyCommands:", concurrentlyCommands);
-  console.debug("concurrentlyOptions:", concurrentlyOptions);
   const { result } = concurrently(concurrentlyCommands, concurrentlyOptions);
   await result;
 
