@@ -1,8 +1,6 @@
 # Changelog
 
-
 ## v0.0.1
-
 
 ### 🚀 Enhancements
 
@@ -45,4 +43,3 @@
 ### ❤️ Contributors
 
 - Jasenmichael <jasen@jasenmichael.com>
-
