@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.0.11
+
+[compare changes](https://github.com/jasenmichael/stackrun/compare/v0.0.10...v0.0.11)
+
+### 🚀 Enhancements
+
+- Add default colorPrefix auto for concurrentlyOptions ([93e1578](https://github.com/jasenmichael/stackrun/commit/93e1578))
+
+### 🏡 Chore
+
+- Update README.md ([61980c1](https://github.com/jasenmichael/stackrun/commit/61980c1))
+
+### ✅ Tests
+
+- Add tests ([43a6786](https://github.com/jasenmichael/stackrun/commit/43a6786))
+
+### ❤️ Contributors
+
+- Jasenmichael <jasen@jasenmichael.com>
+
 ## v0.0.10
 
 [compare changes](https://github.com/jasenmichael/stackrun/compare/v0.0.9...v0.0.10)
