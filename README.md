@@ -127,7 +127,7 @@ const { stackrun, defineStackrunConfig } = require("stackrun");
 ### `concurrentlyOptions`
 
 - Type: `ConcurrentlyOptions`
-- Default: `{ killOthers: "failure", handleInput: true }`
+- Default: `{ killOthers: "failure", handleInput: true, prefixColors: "auto" }`
 
 All options from the [concurrently API](https://github.com/open-cli-tools/concurrently#concurrentlycommands-options) including killOthers, prefix formatting, max processes, and more.
 
