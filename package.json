@@ -55,7 +55,7 @@
   },
   "dependencies": {
     "c12": "^3.0.2",
-    "cf-tunnel": "^0.1.6",
+    "cf-tunnel": "^0.1.9",
     "citty": "^0.1.6",
     "concurrently": "^9.1.2",
     "consola": "^3.4.0",
