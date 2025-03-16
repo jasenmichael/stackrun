@@ -93,7 +93,7 @@ describe("stackrun", () => {
 
     // Check if tunnel command was added
     expect(concurrently).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ name: "TUNN" })]),
+      expect.arrayContaining([expect.objectContaining({ name: "Tunnel" })]),
       expect.anything(),
     );
   });

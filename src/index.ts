@@ -1,6 +1,7 @@
+import { execSync } from "node:child_process";
+import chalk from "chalk";
 import concurrently, { Command } from "concurrently";
 import consola from "consola";
-import { execSync } from "node:child_process";
 import type { TunnelConfig } from "cf-tunnel";
 
 // Get options type from concurrently's function parameters
@@ -53,7 +54,24 @@ export type StackrunConfig = {
    * which is automatically generated from commands with url and tunnelUrl properties.
    * @see https://www.npmjs.com/package/cf-tunnel#configuration-options
    */
-  cfTunnelConfig?: Omit<Partial<TunnelConfig>, "ingress">;
+  cfTunnelConfig?: Omit<Partial<TunnelConfig>, "ingress"> & {
+    /**
+     * Options for the concurrently command that runs the tunnel.
+     * These customize how the tunnel command appears in the output.
+     */
+    commandOptions?: {
+      /** Name for the tunnel command in the output */
+      name?: string;
+      /** Color for the tunnel command prefix */
+      prefixColor?: string;
+      /** Environment variables for the tunnel command */
+      env?: Record<string, string | boolean | undefined>;
+      /** Working directory for the tunnel command */
+      cwd?: string;
+      /** Whether to enable IPC for the tunnel command */
+      ipc?: number;
+    };
+  };
 
   /** Commands to run before starting the concurrent processes */
   beforeCommands?: string[];
@@ -72,11 +90,7 @@ export function defineStackrunConfig(config: StackrunConfig) {
 export async function stackrun(config: StackrunConfig) {
   //  set defaults
   const {
-    concurrentlyOptions = {
-      killOthers: "failure",
-      handleInput: true,
-      prefixColors: "auto",
-    },
+    concurrentlyOptions = {},
     tunnelEnabled = false,
     cfTunnelConfig = {
       cloudflaredConfigDir: undefined,
@@ -90,6 +104,14 @@ export async function stackrun(config: StackrunConfig) {
     commands = [],
   } = config;
 
+  concurrentlyOptions.killOthers = concurrentlyOptions?.killOthers || "failure";
+  concurrentlyOptions.handleInput = concurrentlyOptions?.handleInput || true;
+  concurrentlyOptions.prefixColors =
+    concurrentlyOptions?.prefixColors || "auto";
+  concurrentlyOptions.prefixLength = concurrentlyOptions?.prefixLength || 10;
+
+  consola.info(concurrentlyOptions);
+
   // Filter out any commands that don't have a required command property
   const concurrentlyCommands = commands
     .filter((command) => typeof command.command === "string")
@@ -99,12 +121,21 @@ export async function stackrun(config: StackrunConfig) {
       const tunnelEnv = { ...env, ...command.tunnelEnv };
       return {
         ...command, // Include everything
+        name: (() => {
+          if (!command.name) return undefined;
+          if (concurrentlyOptions.prefixLength) {
+            return command.name.slice(0, concurrentlyOptions.prefixLength);
+          }
+          return command.name;
+        })(),
         command: command.command as string,
         env: tunnelEnabled ? tunnelEnv : env,
       };
     });
 
   if (tunnelEnabled) {
+    consola.info("Tunneling is enabled");
+
     const cfToken =
       cfTunnelConfig.cfToken ||
       process.env.CF_TOKEN ||
@@ -146,14 +177,51 @@ export async function stackrun(config: StackrunConfig) {
       removeExistingTunnel,
     };
 
-    concurrentlyCommands.push({
-      name: "TUNN",
-      command: `node --no-warnings -e 'require("cf-tunnel").cfTunnel(${JSON.stringify(tunnelConfig)})'`,
+    const tunnelCommand = {
       // command: `node --no-warnings -e "require('cf-tunnel').cfTunnel(${JSON.stringify(JSON.stringify(tunnelConfig))})"`,
-      cwd: undefined,
-      env: {},
-      prefixColor: "red",
-    });
+      command: `node --no-warnings -e 'require("cf-tunnel").cfTunnel(${JSON.stringify(tunnelConfig)})'`,
+      // { name, prefixColor, env, cwd, ipc }
+      name: (() => {
+        // Get the raw display name first
+        let displayName = cfTunnelConfig?.commandOptions?.name || "Tunnel";
+
+        // Apply prefixLength truncation if needed
+        if (concurrentlyOptions.prefixLength) {
+          displayName = displayName.slice(0, concurrentlyOptions.prefixLength);
+        }
+
+        // Now apply colors - either a single color or rainbow effect
+        if (cfTunnelConfig?.commandOptions?.prefixColor) {
+          return displayName; // Let concurrently apply the color via prefixColor
+        } else {
+          // Create rainbow effect when no prefixColor is provided
+          const rainbowColors = [
+            "red",
+            "yellowBright",
+            "yellow",
+            "green",
+            "blue",
+            "magenta",
+            "cyan",
+          ];
+
+          return [...displayName]
+            .map((char, i) => {
+              const colorIndex = i % rainbowColors.length;
+              const color = rainbowColors[colorIndex];
+              // @ts-ignore - Using dynamic color lookup
+              return chalk[color](char);
+            })
+            .join("");
+        }
+      })(),
+      prefixColor: cfTunnelConfig?.commandOptions?.prefixColor,
+      env: cfTunnelConfig?.commandOptions?.env || {},
+      cwd: cfTunnelConfig?.commandOptions?.cwd || undefined,
+      ipc: cfTunnelConfig?.commandOptions?.ipc || undefined,
+    };
+
+    concurrentlyCommands.push(tunnelCommand);
   } else {
     consola.info("Tunneling is disabled");
   }
@@ -164,15 +232,29 @@ export async function stackrun(config: StackrunConfig) {
   };
 
   // run before commands
-  for (const command of beforeCommands) {
-    execSync(command, execOptions);
+  if (beforeCommands.length > 0) {
+    consola.info("Running beforeCommands");
+
+    for (const command of beforeCommands) {
+      consola.info(`Running beforeCommand: ${command}`);
+      execSync(command, execOptions);
+    }
+  } else {
+    consola.info("No beforeCommands to run");
   }
 
   const { result } = concurrently(concurrentlyCommands, concurrentlyOptions);
   await result;
 
   // run after commands
-  for (const command of afterCommands) {
-    execSync(command, execOptions);
+  if (afterCommands.length > 0) {
+    consola.info("Running afterCommands");
+
+    for (const command of afterCommands) {
+      consola.info(`Running afterCommand: ${command}`);
+      execSync(command, execOptions);
+    }
+  } else {
+    consola.info("No afterCommands to run");
   }
 }
