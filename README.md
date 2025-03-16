@@ -140,7 +140,7 @@ When true, creates tunnels for services with `url` and `tunnelUrl` defined.
 
 ### `cfTunnelConfig`
 
-- Type: `Omit<TunnelConfig, "ingress">`
+- Type: `Omit<TunnelConfig, "ingress"> & { commandOptions?: {...} }`
 - Default:
 
   ```
@@ -149,11 +149,28 @@ When true, creates tunnels for services with `url` and `tunnelUrl` defined.
     tunnelName: "stackrun",
     removeExistingTunnel: false,
     removeExistingDns: false,
+    commandOptions: {
+      name: "Tunnel",
+      prefixColor: undefined,
+    },
   }
-
   ```
 
 Configuration for [cf-tunnel](https://www.npmjs.com/package/cf-tunnel). All options except `ingress` are supported (ingress is automatically generated from command entries).
+
+You can also customize how the tunnel command appears in the output using `commandOptions`:
+
+```
+cfTunnelConfig: {
+  cfToken: process.env.CF_TOKEN,
+  tunnelName: "my-project",
+  // Customize the tunnel command options passed to concurrently when running cf-tunnel
+  commandOptions: {
+    name: "TUNNEL",
+    prefixColor: "cyan"
+  }
+}
+```
 
 ### `beforeCommands`
 
