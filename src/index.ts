@@ -75,6 +75,7 @@ export async function stackrun(config: StackrunConfig) {
     concurrentlyOptions = {
       killOthers: "failure",
       handleInput: true,
+      prefixColors: "auto",
     },
     tunnelEnabled = false,
     cfTunnelConfig = {
