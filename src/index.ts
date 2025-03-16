@@ -147,23 +147,8 @@ export async function stackrun(config: StackrunConfig) {
 
     concurrentlyCommands.push({
       name: "TUNN",
-      // command: `CF_TOKEN=${cfToken} npx cf-tunnel --json '${JSON.stringify(tunnelConfig).replace(/'/g, String.raw`\'`)}'`,
-      command: (() => {
-        // Encode config as Base64 to avoid any string escaping issues
-        const configBase64 = Buffer.from(JSON.stringify(tunnelConfig)).toString(
-          "base64",
-        );
-
-        return `node --no-warnings -e "
-          const { cfTunnel } = require('cf-tunnel');
-          const tunnelConfig = JSON.parse(Buffer.from('${configBase64}', 'base64').toString());
-          cfTunnel(tunnelConfig)
-            .catch((error) => {
-              console.error(error);
-              process.exit(1);
-            });
-        "`;
-      })(),
+      command: `node --no-warnings -e 'require("cf-tunnel").cfTunnel(${JSON.stringify(tunnelConfig)})'`,
+      // command: `node --no-warnings -e "require('cf-tunnel').cfTunnel(${JSON.stringify(JSON.stringify(tunnelConfig))})"`,
       cwd: undefined,
       env: {},
       prefixColor: "red",
