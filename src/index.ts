@@ -110,8 +110,6 @@ export async function stackrun(config: StackrunConfig) {
     concurrentlyOptions?.prefixColors || "auto";
   concurrentlyOptions.prefixLength = concurrentlyOptions?.prefixLength || 10;
 
-  consola.info(concurrentlyOptions);
-
   // Filter out any commands that don't have a required command property
   const concurrentlyCommands = commands
     .filter((command) => typeof command.command === "string")
@@ -228,7 +226,7 @@ export async function stackrun(config: StackrunConfig) {
 
   const execOptions = {
     env: { ...process.env, PATH: process.env.PATH },
-    stdio: "inherit" as const, // Type assertion
+    stdio: "inherit" as const,
   };
 
   // run before commands
@@ -243,7 +241,10 @@ export async function stackrun(config: StackrunConfig) {
     consola.info("No beforeCommands to run");
   }
 
-  const { result } = concurrently(concurrentlyCommands, concurrentlyOptions);
+  const { result, commands: cmds } = concurrently(
+    concurrentlyCommands,
+    concurrentlyOptions,
+  );
   await result;
 
   // run after commands
@@ -257,4 +258,12 @@ export async function stackrun(config: StackrunConfig) {
   } else {
     consola.info("No afterCommands to run");
   }
+
+  if (cmds && typeof cmds[Symbol.iterator] === "function") {
+    for (const cmd of cmds) {
+      consola.info(`Command ${cmd.name} ${cmd.state}`);
+    }
+  }
+
+  consola.info("Stackrun completed");
 }
