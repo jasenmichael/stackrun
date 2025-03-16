@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.0.10
+
+[compare changes](https://github.com/jasenmichael/stackrun/compare/v0.0.9...v0.0.10)
+
+### 🩹 Fixes
+
+- Refactor tunnel command ([07486df](https://github.com/jasenmichael/stackrun/commit/07486df))
+
+### ✅ Tests
+
+- Add tests ([ea564e9](https://github.com/jasenmichael/stackrun/commit/ea564e9))
+
+### ❤️ Contributors
+
+- Jasenmichael <jasen@jasenmichael.com>
+
 ## v0.0.9
 
 [compare changes](https://github.com/jasenmichael/stackrun/compare/v0.0.8...v0.0.9)
