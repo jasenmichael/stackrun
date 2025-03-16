@@ -189,7 +189,4 @@ export async function stackrun(config: StackrunConfig) {
   for (const command of afterCommands) {
     execSync(command, execOptions);
   }
-
-  // remove temp config file
-  execSync(`rm -rf .tmp`);
 }
