@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.0.12
+
+[compare changes](https://github.com/jasenmichael/stackrun/compare/v0.0.11...v0.0.12)
+
+### 🚀 Enhancements
+
+- **tunnel:** Add colorful rainbow tunnel name and customizable command options ([a1ac57a](https://github.com/jasenmichael/stackrun/commit/a1ac57a))
+
+### 📖 Documentation
+
+- Update README.md ([642cc01](https://github.com/jasenmichael/stackrun/commit/642cc01))
+
+### 🏡 Chore
+
+- Adds chalk ([0e66e65](https://github.com/jasenmichael/stackrun/commit/0e66e65))
+
+### ❤️ Contributors
+
+- Jasenmichael <jasen@jasenmichael.com>
+
 ## v0.0.11
 
 [compare changes](https://github.com/jasenmichael/stackrun/compare/v0.0.10...v0.0.11)
