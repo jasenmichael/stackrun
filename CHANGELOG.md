@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.0.9
+
+[compare changes](https://github.com/jasenmichael/stackrun/compare/v0.0.8...v0.0.9)
+
+### 🩹 Fixes
+
+- Bump cf-tunnel to 0.1.9, fixes deleteTunnel on cleanup ([65b7c7c](https://github.com/jasenmichael/stackrun/commit/65b7c7c))
+- Bump cf-tunnel to 0.1.9, fixes deleteTunnel on cleanup ([62b785e](https://github.com/jasenmichael/stackrun/commit/62b785e))
+
+### 🏡 Chore
+
+- Cleanup ([0cc55dd](https://github.com/jasenmichael/stackrun/commit/0cc55dd))
+
+### ❤️ Contributors
+
+- Jasenmichael <jasen@jasenmichael.com>
+
 ## v0.0.8
 
 [compare changes](https://github.com/jasenmichael/stackrun/compare/v0.0.7...v0.0.8)
