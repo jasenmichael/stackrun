@@ -1,11 +1,7 @@
-node_modules
-coverage
-dist
+/target
+**/*.rs.bk
 .vscode
 .DS_Store
-.eslintcache
 *.log*
-*.env*
-!*example.env
-stackrun-*.tgz
 *.tmp
+graphify-out/

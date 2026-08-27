@@ -1,302 +1,352 @@
-# 🥞 stackrun <span style="transform: scaleX(-1); display: inline-block;">🏃</span>
+# stackrun
 
-stackrun is a wrapper around [concurrently](https://www.npmjs.com/package/concurrently) and [cf-tunnel](https://www.npmjs.com/package/cf-tunnel) that simplifies running multiple services with optional integrated Cloudflare tunneling.
+Process-orchestration CLI. Run one or more arbitrary commands concurrently, with prefixed log output, lifecycle hooks, and optional Cloudflare tunneling.
 
-<!-- automd:badges name="stackrun" codecov license -->
+Commands are opaque OS processes: Node, Python, Go, shell, or any executable. This branch is a standalone Rust binary. The historical Node implementation lives on `main`.
 
-[![npm version](https://img.shields.io/npm/v/stackrun)](https://npmjs.com/package/stackrun)
-[![npm downloads](https://img.shields.io/npm/dm/stackrun)](https://npm.chart.dev/stackrun)
-[![codecov](https://img.shields.io/codecov/c/gh/jasenmichael/stackrun)](https://codecov.io/gh/jasenmichael/stackrun)
-[![license](https://img.shields.io/github/license/jasenmichael/stackrun)](https://github.com/jasenmichael/stackrun/blob/main/LICENSE)
+## Features
 
-<!-- /automd -->
+- One config file for a local stack of services
+- Concurrent processes with prefixed, color-coded output
+- Native config without Node: JSON, JSONC, JSON5, YAML, TOML, `.env`, and `.stackrc`
+- Optional JS/TS config via Node + Jiti (only when you use those files)
+- Lifecycle hooks (`beforeCommands` / `afterCommands`)
+- Per-command `env`, `cwd`, and `tunnelEnv` overlays
+- One-off runs with `--command` (no config file required)
+- Named Cloudflare tunnels via `cloudflared` (token + `url`/`tunnelUrl` pairs)
 
-## ✅ Features
+Requires `cloudflared` login (`cert.pem`) and a Cloudflare API token when tunneling. Missing token or ingress exits before any processes start.
 
-- **Simple Configuration**: Single config file for all your services and tunneling needs
-- **Service Execution**: Run multiple services simultaneously with [concurrently](https://github.com/open-cli-tools/concurrently)
-- **Cloudflare Tunneling**: Built-in support for exposing local services via [cf-tunnel](https://www.npmjs.com/package/cf-tunnel)
-- **Flexible Configuration**: TS/JS/JSON config files with [c12](https://github.com/unjs/c12) loader
-- **Environment Management**: Define regular and tunnel-specific environment variables for each service
-- **Lifecycle Hooks**: Run commands before starting and after stopping your services
-- **Smart Output Handling**: Color-coded service output with customizable prefixes
+## Requirements
 
-## 🚀 Usage
+- A [Rust](https://rustup.rs/) stable toolchain (`rust-toolchain.toml` pins `stable`)
+- Unix is the primary platform (process groups on SIGINT). Windows uses `cmd /c` without the extra process-group handling.
+- Tunneling: [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/) on PATH, `cloudflared tunnel login` once, and a Cloudflare API token (`CF_TOKEN` / `CLOUDFLARE_TOKEN`).
 
-CLI:
+Node.js is **not** required for YAML, TOML, JSON, JSONC, or JSON5. It is required only if the discovered config is JS or TS (`jiti` must be importable, typically from the project's `node_modules`).
 
-Install package globally:
+## Installation
+
+From a clone of this repo:
 
 ```sh
-# npm
-npm install -g stackrun
-
-# pnpm
-pnpm install -g stackrun
-
+cargo install --path .
 ```
 
-CLI usage:
+Or run without installing:
 
 ```sh
-# Run with default config file
+cargo run -- --help
+```
+
+This branch does not publish an npm package. Use the Rust binary.
+
+## Quick start
+
+```sh
+# Discover stack.config.* in the current directory
 stackrun
 
-# With custom config file
-stackrun -c custom.config.js
+# Explicit native config (no Node)
+stackrun --config ./stack.config.yaml
 
-# Enable tunneling
-stackrun --tunnel
-# or set env var
-TUNNEL=true stackrun
+# One-off command (no config file)
+stackrun --command "python server.py"
 ```
 
-Configuration file:
+Minimal YAML:
 
-```ts
-// stack.config.ts
-import { defineStackrunConfig } from "stackrun";
-
-export default defineStackrunConfig({
-  concurrentlyOptions: { killOthers: "failure" },
-  commands: [
-    {
-      name: "api",
-      command: "npm run dev",
-      cwd: "./api",
-      url: "http://localhost:4000",
-      tunnelUrl: "https://api.example.dev",
-    },
-    {
-      name: "web",
-      command: "npm run dev",
-      cwd: "./web",
-    },
-  ],
-});
+```yaml
+# stack.config.yaml
+commands:
+  - name: api
+    command: python server.py
+    cwd: ./api
+  - name: web
+    command: npm run dev
+    cwd: ./web
 ```
 
-API:
+## Usage
 
-Install package:
+```text
+stackrun [OPTIONS] [CONFIG]
+```
 
-<!-- automd:pm-install name="stackrun" -->
+| Flag | Meaning |
+| --- | --- |
+| `-c`, `--config <PATH>` | Config path. Extension may be omitted. Default: `stack.config` |
+| `[CONFIG]` | Positional config path, used when `-c` / `--config` is absent |
+| `--command <SHELL>` | Run a single shell command. Does not require a config file. New in the Rust CLI. |
+| `--json <JSON>` | JSON config overlay (highest data priority). Implemented in Rust. |
+| `-t`, `--tunnel` | Set `tunnelEnabled` to true |
+| `-h`, `--help` | Show help |
+| `-V`, `--version` | Print crate version |
+
+Examples:
 
 ```sh
-# ✨ Auto-detect
-npx nypm install stackrun
-
-# npm
-npm install stackrun
-
-# yarn
-yarn add stackrun
-
-# pnpm
-pnpm install stackrun
-
-# bun
-bun install stackrun
-
-# deno
-deno install stackrun
+stackrun
+stackrun --config ./stack.config.yaml
+stackrun custom.yaml
+stackrun --command "echo hello"
+stackrun --json '{"commands":[{"name":"hi","command":"echo hello"}]}'
+stackrun --tunnel
 ```
 
-<!-- /automd -->
+`--command` replaces the `commands` list. `--json` is a JSON **string**, not a file path. Either flag is enough to run without a config file on disk.
 
-API usage:
+## Configuration
 
-<!-- automd:jsimport cjs name="stackrun" imports="stackrun,defineStackrunConfig" -->
+### Formats
 
-**ESM** (Node.js, Bun, Deno)
+Native (no Node): `.json`, `.jsonc`, `.json5`, `.yaml`, `.yml`, `.toml`.
 
-```js
-import { stackrun, defineStackrunConfig } from "stackrun";
-```
+JS/TS (needs `node` on `PATH` and `jiti`): `.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, `.cts`. Prefer YAML or TOML unless you need a programmed config.
 
-**CommonJS** (Legacy Node.js)
+### Discovery
 
-```js
-const { stackrun, defineStackrunConfig } = require("stackrun");
-```
+Default base name is `stack.config` (not `stackrun.config`). Lookup, first existing file wins, extensions in this order:
 
-<!-- /automd -->
+`.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, `.cts`, `.json`, `.jsonc`, `.json5`, `.yaml`, `.yml`, `.toml`
 
-## ⚙️ Options
+Search paths:
 
-### `concurrentlyOptions`
+1. `{cwd}/{configFile}{ext}` — e.g. `stack.config.yaml`
+2. `{cwd}/.config/{name-without-.config}{ext}` — e.g. `.config/stack.yaml`
+3. `{cwd}/.config/{configFile}{ext}` — e.g. `.config/stack.config.yaml`
 
-- Type: `ConcurrentlyOptions`
-- Default: `{ killOthers: "failure", handleInput: true, prefixColors: "auto" }`
+If both `stack.config.ts` and `stack.config.yaml` exist, the TypeScript file wins and requires Node. Pass `--config stack.config.yaml` to force the native file.
 
-All options from the [concurrently API](https://github.com/open-cli-tools/concurrently#concurrentlycommands-options) including killOthers, prefix formatting, max processes, and more.
+Also loaded from the current working directory (not the home directory):
 
-### `tunnelEnabled`
+- `.env` — interpolated (`${VAR}` / `$VAR`); does not override already-set env vars; keys starting with `_` are skipped
+- `.stackrc` — rc-style `KEY=VALUE` (dotted keys)
 
-- Type: `boolean`
-- Default: `false`
+`extends` is supported for **local paths only**. `package.json` is not read as config.
 
-When true, creates tunnels for services with `url` and `tunnelUrl` defined.
+### Precedence
 
-### `cfTunnelConfig`
+Lowest to highest:
 
-- Type: `Omit<TunnelConfig, "ingress"> & { commandOptions?: {...} }`
-- Default:
+1. Built-in defaults
+2. Configuration files (main file, local `extends`, CWD `.stackrc`)
+3. Environment variables (`TUNNEL=true`, token/name fallbacks, `NODE_ENV` overlays)
+4. CLI (`--json`, `--tunnel`, `--command`)
 
-  ```
-  {
-    cfToken: process.env.CLOUDFLARE_TOKEN,
-    tunnelName: "stackrun",
-    removeExistingTunnel: false,
-    removeExistingDns: false,
-    commandOptions: {
-      name: "Tunnel",
-      prefixColor: undefined,
-    },
-  }
-  ```
+`NODE_ENV` selects `$<envName>` and `$env.<envName>` overlays inside a layer (for example `$development`).
 
-Configuration for [cf-tunnel](https://www.npmjs.com/package/cf-tunnel). All options except `ingress` are supported (ingress is automatically generated from command entries).
+## Configuration reference
 
-You can also customize how the tunnel command appears in the output using `commandOptions`:
+Top-level keys:
 
-```
-cfTunnelConfig: {
-  cfToken: process.env.CF_TOKEN,
-  tunnelName: "my-project",
-  // Customize the tunnel command options passed to concurrently when running cf-tunnel
-  commandOptions: {
-    name: "TUNNEL",
-    prefixColor: "cyan"
-  }
-}
-```
-
-### `beforeCommands`
-
-- Type: `string[]`
-- Default: `[]`
-
-Commands to run before starting the services.
-
-### `afterCommands`
-
-- Type: `string[]`
-- Default: `[]`
-
-Commands to run after all services have completed.
+| Key | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `commands` | array | `[]` | Required to run, unless `--command` or `--json` supplies them |
+| `beforeCommands` | string array | `[]` | Sequential hooks before services. Failure aborts the run. |
+| `afterCommands` | string array | `[]` | Sequential hooks after services. Skipped if the process group fails. |
+| `tunnelEnabled` | boolean | `false` | Enable named Cloudflare tunnels for `url`/`tunnelUrl` commands |
+| `cfTunnelConfig` | object | see below | Token, name, cleanup, tunnel process options |
+| `concurrentlyOptions` | object | see below | Process-manager options |
 
 ### `commands`
 
-- Type: `StackrunConfigCommands[]`
-- Required: Yes
+Entries without a string `command` are ignored.
 
-An array of command configurations to run concurrently. Extends [concurrently's Command type](https://github.com/open-cli-tools/concurrently#command) with additional stackrun-specific properties for tunneling.
+| Field | Type | Description |
+| --- | --- | --- |
+| `command` | string | Shell command to run (required) |
+| `name` | string | Log prefix (truncated to `prefixLength`, default 10) |
+| `cwd` | string | Working directory |
+| `env` | map | Environment variables (`string` or `boolean`) |
+| `prefixColor` | string | Prefix color (`red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`) |
+| `url` | string | Local URL; required together with `tunnelUrl` to create ingress |
+| `tunnelUrl` | string | Public URL for the tunnel |
+| `tunnelEnv` | map | Merged over `env` when tunneling is enabled |
+| `ipc` | number | Accepted for compatibility |
+| `raw` | boolean | Accepted for compatibility |
 
-Each command configuration supports:
+A command may also be a bare string: `commands: ["echo hello"]`.
 
-| Option        | Type                                             | Description                                                               |
-| ------------- | ------------------------------------------------ | ------------------------------------------------------------------------- |
-| `command`     | `string`                                         | Command to run (required)                                                 |
-| `name`        | `string`                                         | Name for the command in logs                                              |
-| `cwd`         | `string`                                         | Working directory for the command                                         |
-| `env`         | `Record<string, string \| boolean \| undefined>` | Environment variables                                                     |
-| `prefixColor` | `string`                                         | Color for the command prefix                                              |
-| `url`         | `string`                                         | Local URL for tunneling (required for tunnel creation)                    |
-| `tunnelUrl`   | `string`                                         | Public URL for tunnel (required for tunnel creation)                      |
-| `tunnelEnv`   | `Record<string, string \| boolean \| undefined>` | Environment variables that override regular env when tunneling is enabled |
+### `beforeCommands` / `afterCommands`
 
-Additional options from [concurrently's Command](https://github.com/open-cli-tools/concurrently#command) are also supported.
+String arrays. Each item is run sequentially in a shell with inherited stdio. `beforeCommands` failure aborts. `afterCommands` run only if the concurrent commands succeed.
 
-## 📝 Examples
+### `concurrentlyOptions`
 
-### Basic Stack
+Defaults applied at run time:
 
-```ts
-// stack.config.ts
-import { defineStackrunConfig } from "stackrun";
-
-export default defineStackrunConfig({
-  commands: [
-    {
-      name: "api",
-      command: "npm run dev",
-      cwd: "./api",
-      prefixColor: "green",
-    },
-    {
-      name: "web",
-      command: "npm run dev",
-      cwd: "./web",
-      prefixColor: "blue",
-    },
-  ],
-});
+```yaml
+concurrentlyOptions:
+  killOthers: failure
+  handleInput: true
+  prefixColors: auto
+  prefixLength: 10
 ```
 
-### With Docker and Tunneling
+The process manager honors `killOthers` (kill the rest on failure), `prefixLength`, `handleInput` (stdin inherit vs null), and `prefixColors: auto` (cycle colors when `prefixColor` is unset). Other concurrently-style keys (`maxProcesses`, `raw`, `restartTries`, and so on) are accepted in the file for compatibility and ignored.
 
-```ts
-// stack.config.ts
-import { defineStackrunConfig } from "stackrun";
-import "dotenv/config";
+### `cfTunnelConfig`
 
-export default defineStackrunConfig({
-  tunnelEnabled: true,
-  cfTunnelConfig: {
-    cfToken: process.env.CF_TOKEN,
-    tunnelName: "my-project",
-    removeExistingTunnel: true,
-  },
-  beforeCommands: ["docker compose -f docker-compose.dev.yml up -d db"],
-  afterCommands: ["docker compose -f docker-compose.dev.yml down db"],
-  commands: [
-    {
-      name: "api",
-      command: "npm run dev",
-      cwd: "./api",
-      url: "http://localhost:4000",
-      tunnelUrl: "https://api.example.dev",
-      prefixColor: "green",
-    },
-    {
-      name: "web",
-      command: "npm run dev",
-      cwd: "./web",
-      url: "http://localhost:3000",
-      tunnelUrl: "https://app.example.dev",
-      prefixColor: "blue",
-    },
-  ],
-});
+Ingress is generated from command `url` / `tunnelUrl` pairs. You do not set ingress yourself.
+
+| Field | Default |
+| --- | --- |
+| `cfToken` | `CLOUDFLARE_TOKEN` (then `CF_TOKEN` at enable time) |
+| `tunnelName` | `CLOUDFLARE_TUNNEL_NAME` or `"stackrun"` (`CF_TUNNEL_NAME` is also read) |
+| `removeExistingTunnel` | `false` |
+| `removeExistingDns` | `false` |
+| `cloudflaredConfigDir` | unset (tooling default) |
+| `commandOptions.name` | `"Tunnel"` |
+| `commandOptions.prefixColor` | unset |
+
+```yaml
+cfTunnelConfig:
+  cfToken: ${CF_TOKEN}
+  tunnelName: my-project
+  commandOptions:
+    name: TUNNEL
+    prefixColor: cyan
 ```
 
-## 💻 Development
+Token resolution when tunneling is enabled: `cfTunnelConfig.cfToken`, then `CF_TOKEN`, then `CLOUDFLARE_TOKEN`. Missing token or empty ingress aborts before `beforeCommands` with exit code 1. If a tunnel or DNS record already exists, set `removeExistingTunnel` / `removeExistingDns` to `true` (playground default) or the run errors.
 
-<details>
-<summary>Local development</summary>
+## Environment variables
 
-- Clone this repository
-- Install latest LTS version of [Node.js](https://nodejs.org/en/)
-- Enable [Corepack](https://github.com/nodejs/corepack) using `corepack enable`
-- Install dependencies using `pnpm install`
-- Run interactive tests using `pnpm dev`
+| Variable | Effect |
+| --- | --- |
+| `TUNNEL=true` | Same as `--tunnel` (exact string `"true"`, not `1` / `yes`) |
+| `CLOUDFLARE_TOKEN` | Default / fallback tunnel token |
+| `CF_TOKEN` | Fallback token if `cfTunnelConfig.cfToken` is unset |
+| `CLOUDFLARE_TUNNEL_NAME` | Default tunnel name (`"stackrun"` if unset) |
+| `CF_TUNNEL_NAME` | Alternate tunnel name |
+| `NODE_ENV` | Selects `$development` / `$production` / `$test` (and `$env.<name>`) overlays |
 
-</details>
+There is no `STACKRUN_*` prefix in the CLI. `.env` in the working directory is loaded as described under [Configuration](#configuration).
+
+## Examples
+
+### Two services
+
+```yaml
+# stack.config.yaml
+commands:
+  - name: api
+    command: python -m http.server 4000
+    cwd: ./api
+    prefixColor: green
+  - name: web
+    command: npm run dev
+    cwd: ./web
+    prefixColor: blue
+```
+
+```sh
+stackrun --config ./stack.config.yaml
+```
+
+### Lifecycle hooks
+
+```yaml
+beforeCommands:
+  - docker compose -f docker-compose.dev.yml up -d db
+afterCommands:
+  - docker compose -f docker-compose.dev.yml down db
+commands:
+  - name: api
+    command: npm run dev
+    cwd: ./api
+```
+
+### Tunnel config
+
+Needs `cloudflared` on PATH, a prior `cloudflared tunnel login`, and an API token. Hostnames in `tunnelUrl` must be on a zone in that account.
+
+```yaml
+tunnelEnabled: true
+cfTunnelConfig:
+  cfToken: ${CF_TOKEN}
+  tunnelName: my-project
+  removeExistingTunnel: true
+  removeExistingDns: true
+commands:
+  - name: api
+    command: npm run dev
+    cwd: ./api
+    url: http://localhost:4000
+    tunnelUrl: https://api.example.dev
+    prefixColor: green
+```
+
+### JS/TS config
+
+`stack.config.ts` (and `.js` / `.mjs` / `.cjs` / `.mts` / `.cts`) works if `node` is on `PATH` and `jiti` can be imported. Native formats never need Node.
+
+```ts
+export default {
+  commands: [{ name: "api", command: "npm run dev", cwd: "./api" }],
+};
+```
+
+## Development
+
+Requires a Rust stable toolchain.
+
+```sh
+cargo test
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo run -- --help
+cargo run -- --command 'echo hello'
+```
+
+Historical Node sources (`src/cli.ts`, vitest, unbuild) are on `main` only.
+
+## Project docs
+
+| File | Owns |
+| --- | --- |
+| [SPEC.md](SPEC.md) | Product behavior (wins if it disagrees with STACK) |
+| [STACK.md](STACK.md) | Tools and hosting |
+| [DESIGN.md](DESIGN.md) | Terminal output / visual non-goals |
+| [PLAN.md](PLAN.md) | Rust port phases and open questions |
+
+## Status
+
+Rust CLI on `refactor/rust`. Historical Node package is on `main`.
+
+**Works today**
+
+- Native config load (JSON / JSONC / JSON5 / YAML / TOML / `.env` / `.stackrc` / local `extends` / `NODE_ENV` overlays)
+- CLI: `--config`, positional config, `--command`, `--json`, `--tunnel`, `--help`, `--version`
+- Process manager: concurrent shell spawn, name prefixes, `prefixColor` / `prefixColors: auto`, `handleInput`, `beforeCommands` / `afterCommands`, kill-others-on-failure, SIGINT cleanup
+- Cloudflare named tunnel: `cloudflared` create/route/run + DNS API; abort if token or ingress missing; cleanup on exit
+- JS/TS config via Node + Jiti when those files are used
+
+**Not in this pass**
+
+- Several concurrently options (`maxProcesses`, restart, `ipc`, `raw`, …) deserialize and are ignored
+- Rainbow per-character tunnel name (uses cyan if `prefixColor` unset)
+- Packaging: no GitHub-release binaries and no npm wrapper
+
+## Contributing
+
+Issues and pull requests are welcome.
+
+- Format with `rustfmt` (`cargo fmt`)
+- Keep `cargo clippy --all-targets -- -D warnings` clean
+- Add or update tests for behavior changes (`cargo test`)
 
 ## License
 
 Published under the [MIT](./LICENSE) license.
 
-## Contributors
+Maintained by [@jasenmichael](https://github.com/jasenmichael).
 
-Published under the [MIT](https://github.com/jasenmichael/stackrun/blob/main/LICENSE) license.
-Made by [@jasenmichael](https://github.com/jasenmichael) ❤️
+## Goals
 
-<!-- automd:with-automd -->
-
----
-
-_🤖 auto updated with [automd](https://automd.unjs.io)_
-
-<!-- /automd -->
+1. A standalone Rust CLI that runs mixed-language local stacks from one config file.
+2. Native config (YAML, TOML, JSON, and relatives) with no Node; JS/TS only when those files are used.
+3. Match historical Node stackrun behavior except documented Rust differences (`--command`, implemented `--json`, native process manager).
+4. Named Cloudflare tunnels (`cloudflared`, token, ingress from `url` / `tunnelUrl`).
+5. Publish platform binaries later. An optional npm `bin` wrapper is not part of this branch.
