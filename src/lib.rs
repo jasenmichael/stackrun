@@ -11,7 +11,10 @@ pub mod logging;
 pub mod process;
 pub mod tunnel;
 
-pub use config::load::{apply_defaults, load_config, LoadOptions, LoadedConfig};
+pub use config::load::{
+    apply_defaults, dry_run_report, format_dry_run, load_config, DryRunReport, LoadOptions,
+    LoadedConfig,
+};
 pub use config::types::{
     CfTunnelConfig, CommandEntry, CommandSpec, ConcurrentlyOptions, StackrunConfig,
     TunnelCommandOptions,

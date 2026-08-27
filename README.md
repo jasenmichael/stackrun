@@ -13,6 +13,7 @@ Commands are opaque OS processes: Node, Python, Go, shell, or any executable. Th
 - Lifecycle hooks (`beforeCommands` / `afterCommands`)
 - Per-command `env`, `cwd`, and `tunnelEnv` overlays
 - One-off runs with `--command` (no config file required)
+- `--dry-run` prints the loaded config as JSON without starting processes or tunnels
 - Named Cloudflare tunnels via `cloudflared` (token + `url`/`tunnelUrl` pairs)
 
 Requires `cloudflared` login (`cert.pem`) and a Cloudflare API token when tunneling. Missing token or ingress exits before any processes start.
@@ -80,6 +81,7 @@ stackrun [OPTIONS] [CONFIG]
 | `--command <SHELL>` | Run a single shell command. Does not require a config file. New in the Rust CLI. |
 | `--json <JSON>` | JSON config overlay (highest data priority). Implemented in Rust. |
 | `-t`, `--tunnel` | Set `tunnelEnabled` to true |
+| `--dry-run` | Print effective config as JSON and exit. Does not start processes or tunnels. `cfToken` is redacted. |
 | `-h`, `--help` | Show help |
 | `-V`, `--version` | Print crate version |
 
@@ -92,9 +94,22 @@ stackrun custom.yaml
 stackrun --command "echo hello"
 stackrun --json '{"commands":[{"name":"hi","command":"echo hello"}]}'
 stackrun --tunnel
+stackrun --dry-run
+stackrun --dry-run --command "echo hello"
 ```
 
 `--command` replaces the `commands` list. `--json` is a JSON **string**, not a file path. Either flag is enough to run without a config file on disk.
+
+`--dry-run` uses the same load path as a real run (file discovery, `.stackrc`, `.env`, local `extends`, `NODE_ENV` overlays, then CLI flags), then prints:
+
+```json
+{
+  "configFile": "/abs/path/to/stack.config.yaml",
+  "config": { "commands": [], "tunnelEnabled": false }
+}
+```
+
+`configFile` is `null` when no file was used (`--command` / `--json` only). Exit 0 on a successful load; exit 1 on load errors. Secrets in `cfTunnelConfig.cfToken` print as `"[redacted]"`. Env tokens (`CF_TOKEN`, `CLOUDFLARE_TOKEN`) are not dumped.
 
 ## Configuration
 
@@ -298,6 +313,7 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo run -- --help
 cargo run -- --command 'echo hello'
+cargo run -- --dry-run --command 'echo hello'
 ```
 
 Historical Node sources (`src/cli.ts`, vitest, unbuild) are on `main` only.
@@ -318,7 +334,7 @@ Rust CLI on `refactor/rust`. Historical Node package is on `main`.
 **Works today**
 
 - Native config load (JSON / JSONC / JSON5 / YAML / TOML / `.env` / `.stackrc` / local `extends` / `NODE_ENV` overlays)
-- CLI: `--config`, positional config, `--command`, `--json`, `--tunnel`, `--help`, `--version`
+- CLI: `--config`, positional config, `--command`, `--json`, `--tunnel`, `--dry-run`, `--help`, `--version`
 - Process manager: concurrent shell spawn, name prefixes, `prefixColor` / `prefixColors: auto`, `handleInput`, `beforeCommands` / `afterCommands`, kill-others-on-failure, SIGINT cleanup
 - Cloudflare named tunnel: `cloudflared` create/route/run + DNS API; abort if token or ingress missing; cleanup on exit
 - JS/TS config via Node + Jiti when those files are used

@@ -31,6 +31,11 @@ pub struct Cli {
     #[arg(long = "command")]
     pub command: Option<String>,
 
+    /// Load config and print effective options as JSON. Does not spawn
+    /// processes, tunnels, beforeCommands, or afterCommands.
+    #[arg(long = "dry-run")]
+    pub dry_run: bool,
+
     /// Optional positional config path (`args._[0]` in the Node CLI).
     #[arg(value_name = "CONFIG")]
     pub config_positional: Option<String>,
@@ -72,5 +77,12 @@ mod tests {
     fn short_c_wins_over_positional() {
         let cli = Cli::parse_from(["stackrun", "-c", "a.yaml", "b.yaml"]);
         assert_eq!(cli.config_path(), "a.yaml");
+    }
+
+    #[test]
+    fn dry_run_flag_parses() {
+        let cli = Cli::parse_from(["stackrun", "--dry-run", "--command", "echo x"]);
+        assert!(cli.dry_run);
+        assert_eq!(cli.command.as_deref(), Some("echo x"));
     }
 }

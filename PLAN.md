@@ -15,8 +15,8 @@ Engineering plan for porting Stackrun from Node.js to a standalone Rust CLI.
 | 4 | JS/TS Jiti bridge | Done — Node+Jiti subprocess; tests skip if `jiti` missing |
 | 5 | Process manager | Done for used subset — spawn, prefixes, auto colors, stdin `handleInput`, before/after, kill-others, SIGINT |
 | 6 | Tunnel manager | Done — cf-tunnel lifecycle via `cloudflared` + Cloudflare DNS API; abort if token/ingress missing |
-| 7 | CLI compatibility | clap flags match Node plus `--command`; `--json` implemented |
-| 8 | Tests | Native config, process lifecycle, mocked tunnel setup, optional JS/TS |
+| 7 | CLI compatibility | clap flags match Node plus `--command`; `--json` and `--dry-run` implemented |
+| 8 | Tests | Native config, process lifecycle, mocked tunnel setup, optional JS/TS, CLI flags + config formats via `--dry-run` |
 | 9 | Packaging | Out of scope this pass |
 
 ## Historical Node architecture (`main`)
@@ -24,6 +24,7 @@ Engineering plan for porting Stackrun from Node.js to a standalone Rust CLI.
 ```
 dist/cli.mjs (citty)
     flags: --config/-c, --json (unused), --tunnel/-t, --help, -V
+    (Rust adds --command, implements --json, adds --dry-run)
     env: TUNNEL=true
     c12.loadConfig({ name: "stack", configFile, cwd, dotenv: true })
     stack.config.{js,ts,...json,yaml,toml} | .config/stack.* | .stackrc
@@ -122,5 +123,6 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 cargo run -- --help
 cargo run -- --command 'echo hello'
+cargo run -- --dry-run --command 'echo hello'
 cargo run -- --tunnel --command 'echo x' --json '{"commands":[{"command":"echo x","url":"http://localhost:1","tunnelUrl":"https://x.example"}]}'
 ```

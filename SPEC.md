@@ -29,6 +29,7 @@ Historical Node CLI (citty) is on `main` only.
 | positional `[config]` | string | — | `args._[0]` used if `-c`/`--config` missing (citty default still supplies `stack.config`) |
 | `--json` | string | — | Documented as “input config as JSON”. **Not read by `run()` today.** Dead flag. |
 | `-t`, `--tunnel` | boolean | false | Sets `config.tunnelEnabled = true` |
+| `--dry-run` | boolean | false | Load config (same path as a real run) and print effective options as JSON. Does not spawn processes, tunnels, `beforeCommands`, or `afterCommands`. **Rust-only.** |
 | `-h`, `--help` | boolean | — | Show help |
 | `-V` / `--version` | boolean | — | Print crate version (`CARGO_PKG_VERSION`; Node used `package.json`) |
 
@@ -53,8 +54,9 @@ No `STACKRUN_*` prefix exists in the Node CLI.
 3. `c12.loadConfig({ name: "stack", configFile: configPath, cwd: process.cwd(), dotenv: true })`.
 4. If `--tunnel` or `process.env.TUNNEL === "true"`: `config.tunnelEnabled = true`.
 5. If `config` is missing: error, exit 1.
-6. If `existsSync(configFile)`: log path, `await stackrun(config)`, exit 0.
-7. Else: error `No valid configuration found at ${configPath}`, exit 1.
+6. **Rust:** If `--dry-run`: print a pretty JSON envelope `{ configFile, config }` (effective `StackrunConfig` after overlays and run-time defaults; `cfTunnelConfig.cfToken` redacted to `"[redacted]"` when present). Exit 0. Do not spawn children or set up tunnels. Missing-config and parse errors still exit 1.
+7. If `existsSync(configFile)`: log path, `await stackrun(config)`, exit 0.
+8. Else: error `No valid configuration found at ${configPath}`, exit 1.
 
 Node **requires a resolved config file on disk**. There is no `--command` flag in the Node CLI.
 
@@ -204,6 +206,7 @@ These are required by the refactor goals, not Node bugs:
 7. **This branch is Rust-only.** Node application sources are not present; refer to `main` for the old implementation.
 8. **Explicit `handleInput: false` is honored.** Node’s `value || true` treated `false` as unset.
 9. **No rainbow tunnel prefix.** Default tunnel prefix color is cyan.
+10. **`--dry-run`** prints the loaded/effective config as JSON and exits without running processes or tunnels. `cfToken` in that JSON is redacted. Process env secrets are not dumped.
 
 ## Open questions
 

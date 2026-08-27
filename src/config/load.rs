@@ -7,6 +7,7 @@ use super::types::StackrunConfig;
 use crate::bridge;
 use crate::cli::Cli;
 use crate::error::Error;
+use serde::Serialize;
 use serde_json::{json, Value};
 use std::env;
 use std::path::{Path, PathBuf};
@@ -49,6 +50,17 @@ pub struct LoadedConfig {
     pub config: StackrunConfig,
     pub config_file: Option<PathBuf>,
     pub merged: Value,
+}
+
+/// JSON envelope printed by `--dry-run`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DryRunReport {
+    /// Resolved config file path, if a file was used.
+    pub config_file: Option<PathBuf>,
+    /// Effective config after file load, RC, extends, env overlays, and CLI flags.
+    /// `cfTunnelConfig.cfToken` is redacted when present.
+    pub config: StackrunConfig,
 }
 
 pub fn load_config(options: LoadOptions) -> Result<LoadedConfig, Error> {
@@ -163,6 +175,34 @@ fn apply_cli_overrides(config: &mut StackrunConfig, options: &LoadOptions) {
     }
 }
 
+const REDACTED: &str = "[redacted]";
+
+/// Redact secrets that live on the config object. Does not dump process env.
+pub fn redact_secrets(config: &mut StackrunConfig) {
+    if let Some(cf) = config.cf_tunnel_config.as_mut() {
+        if cf.cf_token.is_some() {
+            cf.cf_token = Some(REDACTED.to_string());
+        }
+    }
+}
+
+/// Effective config for `--dry-run`: same overlays as a real run, plus run-time
+/// defaults, with secrets redacted. Does not spawn processes or tunnels.
+pub fn dry_run_report(loaded: &LoadedConfig) -> DryRunReport {
+    let mut config = loaded.config.clone();
+    apply_defaults(&mut config);
+    redact_secrets(&mut config);
+    DryRunReport {
+        config_file: loaded.config_file.clone(),
+        config,
+    }
+}
+
+/// Pretty-print a [`DryRunReport`] as JSON (stable camelCase serde field names).
+pub fn format_dry_run(loaded: &LoadedConfig) -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(&dry_run_report(loaded))
+}
+
 /// Defaults applied at run time. Explicit `handleInput: false` is honored.
 pub fn apply_defaults(config: &mut StackrunConfig) {
     let mut opts = config.concurrently_options.clone().unwrap_or_default();
@@ -234,5 +274,31 @@ mod tests {
         let dir = tempdir().unwrap();
         let err = load_config(LoadOptions::for_cwd(dir.path())).unwrap_err();
         assert!(matches!(err, Error::ConfigNotFound { .. }));
+    }
+
+    #[test]
+    fn dry_run_redacts_cf_token_and_keeps_path() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("stack.config.yaml"),
+            "cfTunnelConfig:\n  cfToken: super-secret\ncommands:\n  - command: echo hi\n",
+        )
+        .unwrap();
+        let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
+        let report = dry_run_report(&loaded);
+        assert_eq!(
+            report
+                .config
+                .cf_tunnel_config
+                .as_ref()
+                .unwrap()
+                .cf_token
+                .as_deref(),
+            Some(REDACTED)
+        );
+        let json = format_dry_run(&loaded).unwrap();
+        assert!(!json.contains("super-secret"), "{json}");
+        assert!(json.contains(REDACTED), "{json}");
+        assert!(report.config_file.is_some());
     }
 }
