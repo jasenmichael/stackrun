@@ -1,0 +1,8 @@
+{
+  // comment
+  "commands": [{
+    "name": "from-jsonc",
+    "command": "echo from-jsonc",
+    "cwd": "./jsonc-cwd",
+  }],
+}

@@ -43,7 +43,7 @@ Historical Node CLI (citty) is on `main` only.
 | `CLOUDFLARE_TUNNEL_NAME` | Default tunnel name (`"stackrun"` if unset) |
 | `CF_TUNNEL_NAME` | Fallback tunnel name after config and `CLOUDFLARE_TUNNEL_NAME` |
 | `NODE_ENV` | c12 `envName` for `$development` / `$production` / `$test` / `$env` overlays |
-| `.env` (via c12 `dotenv: true`) | Loaded into `process.env` before config import; interpolation on; does not override already-set env vars; keys starting with `_` skipped |
+| `.env` (via c12 `dotenv: true`) | Loaded into `process.env` before config import; `${VAR}` / `$VAR` interpolation in the env file only; does not override already-set env vars; keys starting with `_` skipped. Native YAML/JSON/TOML values are not interpolated. JS/TS configs can read `process.env`. |
 
 No `STACKRUN_*` prefix exists in the Node CLI.
 

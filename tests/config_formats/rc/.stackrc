@@ -1,0 +1,2 @@
+tunnelEnabled=false
+beforeCommands[]=echo rc

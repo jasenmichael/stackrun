@@ -135,7 +135,7 @@ If both `stack.config.ts` and `stack.config.yaml` exist, the TypeScript file win
 
 Also loaded from the current working directory (not the home directory):
 
-- `.env` — interpolated (`${VAR}` / `$VAR`); does not override already-set env vars; keys starting with `_` are skipped
+- `.env` — interpolated (`${VAR}` / `$VAR`); does not override already-set env vars; keys starting with `_` are skipped. Native YAML/JSON/TOML config values are not interpolated; JS/TS configs can read `process.env` after this load.
 - `.stackrc` — rc-style `KEY=VALUE` (dotted keys)
 
 `extends` is supported for **local paths only**. `package.json` is not read as config.
@@ -315,6 +315,8 @@ cargo run -- --help
 cargo run -- --command 'echo hello'
 cargo run -- --dry-run --command 'echo hello'
 ```
+
+Checked-in config fixtures live next to the integration tests: `tests/config_formats/` (one real file per format) and `tests/cli_flags/`. Native YAML/JSON/TOML values are not interpolated; `.env` `${VAR}` expansion applies to the env file itself, and JS/TS configs can read `process.env` after that load.
 
 Historical Node sources (`src/cli.ts`, vitest, unbuild) are on `main` only.
 

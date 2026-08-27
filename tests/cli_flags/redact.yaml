@@ -1,0 +1,5 @@
+cfTunnelConfig:
+  cfToken: file-secret-token
+  tunnelName: demo
+commands:
+  - command: echo x

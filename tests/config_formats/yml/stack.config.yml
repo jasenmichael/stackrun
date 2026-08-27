@@ -1,0 +1,3 @@
+commands:
+  - name: from-yml
+    command: echo from-yml

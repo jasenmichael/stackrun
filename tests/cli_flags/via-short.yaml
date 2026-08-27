@@ -1,0 +1,3 @@
+commands:
+  - name: short
+    command: echo short

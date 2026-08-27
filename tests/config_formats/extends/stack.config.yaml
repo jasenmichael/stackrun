@@ -1,0 +1,4 @@
+extends: ./base.yaml
+commands:
+  - name: from-extends-child
+    command: echo child

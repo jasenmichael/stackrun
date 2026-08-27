@@ -1,0 +1,4 @@
+tunnelEnabled: true
+commands:
+  - name: from-rc-main
+    command: echo main

@@ -1,10 +1,17 @@
 //! CLI flag coverage via the `stackrun` binary and `--dry-run` JSON.
 
 use serde_json::Value;
-use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use tempfile::tempdir;
+
+fn flags_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/cli_flags")
+}
+
+fn fixture(name: &str) -> PathBuf {
+    flags_root().join(name)
+}
 
 fn bin() -> Command {
     Command::new(env!("CARGO_BIN_EXE_stackrun"))
@@ -47,8 +54,15 @@ fn stdout_json(output: &Output) -> Value {
     })
 }
 
-fn write_yaml(dir: &Path, name: &str, body: &str) {
-    fs::write(dir.join(name), body).unwrap();
+fn dry_run_ok(cwd: &Path, args: &[&str]) -> Value {
+    let output = run_in(cwd, args);
+    assert!(
+        output.status.success(),
+        "stderr: {}\nstdout: {}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    );
+    stdout_json(&output)
 }
 
 #[test]
@@ -144,40 +158,17 @@ fn dry_run_json_without_file() {
 
 #[test]
 fn short_c_and_long_config() {
-    let dir = tempdir().unwrap();
-    write_yaml(
-        dir.path(),
-        "via-short.yaml",
-        "commands:\n  - name: short\n    command: echo short\n",
-    );
-    write_yaml(
-        dir.path(),
-        "via-long.yaml",
-        "commands:\n  - name: long\n    command: echo long\n",
-    );
-
-    let short = run_in(dir.path(), &["--dry-run", "-c", "via-short.yaml"]);
-    assert!(
-        short.status.success(),
-        "{}",
-        String::from_utf8_lossy(&short.stderr)
-    );
-    let short_json = stdout_json(&short);
-    assert_eq!(short_json["config"]["commands"][0]["name"], "short");
-    assert!(short_json["configFile"]
+    let root = flags_root();
+    let short = dry_run_ok(&root, &["--dry-run", "-c", "via-short.yaml"]);
+    assert_eq!(short["config"]["commands"][0]["name"], "short");
+    assert!(short["configFile"]
         .as_str()
         .unwrap()
         .ends_with("via-short.yaml"));
 
-    let long = run_in(dir.path(), &["--dry-run", "--config", "via-long.yaml"]);
-    assert!(
-        long.status.success(),
-        "{}",
-        String::from_utf8_lossy(&long.stderr)
-    );
-    let long_json = stdout_json(&long);
-    assert_eq!(long_json["config"]["commands"][0]["name"], "long");
-    assert!(long_json["configFile"]
+    let long = dry_run_ok(&root, &["--dry-run", "--config", "via-long.yaml"]);
+    assert_eq!(long["config"]["commands"][0]["name"], "long");
+    assert!(long["configFile"]
         .as_str()
         .unwrap()
         .ends_with("via-long.yaml"));
@@ -185,19 +176,7 @@ fn short_c_and_long_config() {
 
 #[test]
 fn positional_config() {
-    let dir = tempdir().unwrap();
-    write_yaml(
-        dir.path(),
-        "custom.yaml",
-        "commands:\n  - name: pos\n    command: echo positional\n    cwd: ./pos\n",
-    );
-    let output = run_in(dir.path(), &["--dry-run", "custom.yaml"]);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let report = stdout_json(&output);
+    let report = dry_run_ok(&flags_root(), &["--dry-run", "custom.yaml"]);
     assert_eq!(report["config"]["commands"][0]["name"], "pos");
     assert_eq!(
         report["config"]["commands"][0]["command"],
@@ -211,50 +190,23 @@ fn positional_config() {
 
 #[test]
 fn short_c_wins_over_positional() {
-    let dir = tempdir().unwrap();
-    write_yaml(
-        dir.path(),
-        "a.yaml",
-        "commands:\n  - name: from-c\n    command: echo a\n",
-    );
-    write_yaml(
-        dir.path(),
-        "b.yaml",
-        "commands:\n  - name: from-pos\n    command: echo b\n",
-    );
-    let output = run_in(dir.path(), &["--dry-run", "-c", "a.yaml", "b.yaml"]);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let report = stdout_json(&output);
+    let report = dry_run_ok(&flags_root(), &["--dry-run", "-c", "a.yaml", "b.yaml"]);
     assert_eq!(report["config"]["commands"][0]["name"], "from-c");
     assert!(report["configFile"].as_str().unwrap().ends_with("a.yaml"));
 }
 
 #[test]
 fn json_overlay_wins_over_file() {
-    let dir = tempdir().unwrap();
-    write_yaml(
-        dir.path(),
-        "stack.config.yaml",
-        "tunnelEnabled: false\ncommands:\n  - name: file\n    command: echo file\n",
-    );
-    let output = run_in(
-        dir.path(),
+    let report = dry_run_ok(
+        &flags_root(),
         &[
             "--dry-run",
+            "--config",
+            "overlay.yaml",
             "--json",
             r#"{"tunnelEnabled":true,"commands":[{"name":"json","command":"echo json"}]}"#,
         ],
     );
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let report = stdout_json(&output);
     assert_eq!(report["config"]["tunnelEnabled"], true);
     // json overlay is preferred; file commands still merge (defu concat unique)
     let names: Vec<&str> = report["config"]["commands"]
@@ -269,19 +221,16 @@ fn json_overlay_wins_over_file() {
 
 #[test]
 fn command_replaces_commands() {
-    let dir = tempdir().unwrap();
-    write_yaml(
-        dir.path(),
-        "stack.config.yaml",
-        "commands:\n  - name: file\n    command: echo file\n",
+    let report = dry_run_ok(
+        &flags_root(),
+        &[
+            "--dry-run",
+            "--config",
+            "overlay.yaml",
+            "--command",
+            "python server.py",
+        ],
     );
-    let output = run_in(dir.path(), &["--dry-run", "--command", "python server.py"]);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let report = stdout_json(&output);
     let cmds = report["config"]["commands"].as_array().unwrap();
     assert_eq!(cmds.len(), 1);
     assert_eq!(cmds[0], "python server.py");
@@ -289,34 +238,21 @@ fn command_replaces_commands() {
 
 #[test]
 fn tunnel_short_and_long() {
-    let dir = tempdir().unwrap();
-    write_yaml(
-        dir.path(),
-        "stack.config.yaml",
-        "commands:\n  - command: echo x\n",
-    );
+    let root = flags_root();
     for flag in ["-t", "--tunnel"] {
-        let output = run_in(dir.path(), &["--dry-run", flag]);
-        assert!(
-            output.status.success(),
-            "{flag}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let report = stdout_json(&output);
+        let report = dry_run_ok(&root, &["--dry-run", "--config", "tunnel.yaml", flag]);
         assert_eq!(report["config"]["tunnelEnabled"], true, "{flag}");
     }
 }
 
 #[test]
 fn tunnel_env_true_only() {
-    let dir = tempdir().unwrap();
-    write_yaml(
-        dir.path(),
-        "stack.config.yaml",
-        "commands:\n  - command: echo x\n",
+    let root = flags_root();
+    let on = run_in_with_env(
+        &root,
+        &["--dry-run", "--config", "tunnel.yaml"],
+        &[("TUNNEL", Some("true"))],
     );
-
-    let on = run_in_with_env(dir.path(), &["--dry-run"], &[("TUNNEL", Some("true"))]);
     assert!(
         on.status.success(),
         "{}",
@@ -324,7 +260,11 @@ fn tunnel_env_true_only() {
     );
     assert_eq!(stdout_json(&on)["config"]["tunnelEnabled"], true);
 
-    let off = run_in_with_env(dir.path(), &["--dry-run"], &[("TUNNEL", Some("1"))]);
+    let off = run_in_with_env(
+        &root,
+        &["--dry-run", "--config", "tunnel.yaml"],
+        &[("TUNNEL", Some("1"))],
+    );
     assert!(
         off.status.success(),
         "{}",
@@ -361,46 +301,24 @@ fn tunnel_with_json_and_command() {
 #[test]
 fn dry_run_does_not_spawn_hooks_or_commands() {
     let dir = tempdir().unwrap();
-    let before = dir.path().join("before.ran");
-    let child = dir.path().join("child.ran");
-    write_yaml(
-        dir.path(),
-        "stack.config.yaml",
-        &format!(
-            "beforeCommands:\n  - touch {}\nafterCommands:\n  - touch {}\ncommands:\n  - name: child\n    command: touch {}\n",
-            before.display(),
-            dir.path().join("after.ran").display(),
-            child.display()
-        ),
-    );
-    let output = run_in(dir.path(), &["--dry-run"]);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let report = stdout_json(&output);
+    let config = fixture("hooks.yaml");
+    let config_str = config.to_string_lossy();
+    let report = dry_run_ok(dir.path(), &["--dry-run", "--config", config_str.as_ref()]);
     assert!(report["config"]["beforeCommands"][0]
         .as_str()
         .unwrap()
         .contains("before.ran"));
     assert_eq!(report["config"]["commands"][0]["name"], "child");
-    assert!(!before.exists());
-    assert!(!child.exists());
+    assert!(!dir.path().join("before.ran").exists());
+    assert!(!dir.path().join("child.ran").exists());
     assert!(!dir.path().join("after.ran").exists());
 }
 
 #[test]
 fn dry_run_redacts_cf_token_and_omits_env_token() {
-    let dir = tempdir().unwrap();
-    write_yaml(
-        dir.path(),
-        "stack.config.yaml",
-        "cfTunnelConfig:\n  cfToken: file-secret-token\n  tunnelName: demo\ncommands:\n  - command: echo x\n",
-    );
     let output = run_in_with_env(
-        dir.path(),
-        &["--dry-run"],
+        &flags_root(),
+        &["--dry-run", "--config", "redact.yaml"],
         &[("CF_TOKEN", Some("env-only-secret"))],
     );
     assert!(
