@@ -357,14 +357,19 @@ fn prefix_pipe<R: std::io::Read>(pipe: R, name: &str, color: Option<&str>, is_er
     let reader = BufReader::new(pipe);
     for line in reader.lines() {
         let Ok(line) = line else { break };
-        let tagged = format!("{name} | {line}");
-        let painted = colorize(&tagged, color);
+        let painted = format_prefixed_line(name, &line, color);
         if is_err {
             eprintln!("{painted}");
         } else {
             println!("{painted}");
         }
     }
+}
+
+/// Concurrently-style line: colored `[name]` then a space then the uncolored rest.
+fn format_prefixed_line(name: &str, line: &str, color: Option<&str>) -> String {
+    let prefix = colorize(&format!("[{name}]"), color);
+    format!("{prefix} {line}")
 }
 
 fn colorize(text: &str, color: Option<&str>) -> String {
@@ -476,5 +481,48 @@ mod tests {
         assert_eq!(command_finish_word(Some(1), true), "stopped");
         assert_eq!(command_finish_word(Some(0), false), "exited");
         assert_eq!(command_finish_word(Some(1), false), "errored");
+    }
+
+    #[test]
+    fn prefix_is_brackets_then_space() {
+        assert_eq!(format_prefixed_line("nuxt", "ready", None), "[nuxt] ready");
+        assert_eq!(format_prefixed_line("tunnel", "ok", None), "[tunnel] ok");
+    }
+
+    #[test]
+    fn prefix_truncates_name_inside_brackets() {
+        let spec = CommandSpec {
+            name: Some("verylongname".into()),
+            ..CommandSpec::default()
+        };
+        let name = spec.display_name(10);
+        assert_eq!(format_prefixed_line(&name, "x", None), "[verylongna] x");
+    }
+
+    #[test]
+    fn prefix_color_paints_only_bracket_token() {
+        let rest = " hello world";
+        let out = format_prefixed_line("nuxt", "hello world", Some("green"));
+        assert!(out.ends_with(rest), "uncolored remainder: {out:?}");
+        let prefix_part = &out[..out.len() - rest.len()];
+        assert!(
+            prefix_part.contains("[nuxt]"),
+            "colored prefix contains [nuxt]: {prefix_part:?}"
+        );
+        assert!(
+            prefix_part.contains('\u{1b}'),
+            "ANSI on prefix: {prefix_part:?}"
+        );
+        assert!(
+            !out[out.len() - rest.len()..].contains('\u{1b}'),
+            "remainder has no ANSI: {out:?}"
+        );
+    }
+
+    #[test]
+    fn prefix_no_color_has_no_ansi() {
+        let out = format_prefixed_line("echo", "hi", None);
+        assert_eq!(out, "[echo] hi");
+        assert!(!out.contains('\u{1b}'));
     }
 }

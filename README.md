@@ -171,7 +171,7 @@ Entries without a string `command` are ignored.
 | Field | Type | Description |
 | --- | --- | --- |
 | `command` | string | Shell command to run (required) |
-| `name` | string | Log prefix (truncated to `prefixLength`, default 10) |
+| `name` | string | Log prefix. Truncated to `prefixLength` (default 10) and printed as `[name]`; only that token is colored |
 | `cwd` | string | Working directory |
 | `env` | map | Environment variables (`string` or `boolean`) |
 | `prefixColor` | string | Prefix color (`red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`) |
@@ -199,7 +199,7 @@ concurrentlyOptions:
   prefixLength: 10
 ```
 
-The process manager honors `killOthers` (kill the rest on failure), `prefixLength`, `handleInput` (stdin inherit vs null), and `prefixColors: auto` (cycle colors when `prefixColor` is unset). Other concurrently-style keys (`maxProcesses`, `raw`, `restartTries`, and so on) are accepted in the file for compatibility and ignored.
+The process manager honors `killOthers` (kill the rest on failure), `prefixLength`, `handleInput` (stdin inherit vs null), and `prefixColors: auto` (cycle colors onto `[name]` when `prefixColor` is unset). Child logs look like `[nuxt] …` / `[tunnel] …` — color on the bracketed name only. Other concurrently-style keys (`maxProcesses`, `raw`, `restartTries`, and so on) are accepted in the file for compatibility and ignored.
 
 ### `cfTunnelConfig`
 
@@ -318,7 +318,7 @@ cargo run -- --command 'echo hello'
 cargo run -- --dry-run --command 'echo hello'
 ```
 
-Checked-in config fixtures live next to the integration tests: `tests/config_formats/` (one real file per format) and `tests/cli_flags/`. Native YAML/JSON/TOML values are not interpolated; `.env` `${VAR}` expansion applies to the env file itself, and JS/TS configs can read `process.env` after that load.
+Checked-in config fixtures live next to the integration tests: `tests/config_formats/` (one real file per format), `tests/cli_flags/`, and `tests/docker_stack/` (Compose stacks with `beforeCommands` up / `afterCommands` down; live tests skip without a Docker daemon). Native YAML/JSON/TOML values are not interpolated; `.env` `${VAR}` expansion applies to the env file itself, and JS/TS configs can read `process.env` after that load.
 
 Historical Node sources (`src/cli.ts`, vitest, unbuild) are on `main` only.
 
@@ -339,7 +339,7 @@ Rust CLI on `refactor/rust`. Historical Node package is on `main`.
 
 - Native config load (JSON / JSONC / JSON5 / YAML / TOML / `.env` / `.stackrc` / local `extends` / `NODE_ENV` overlays)
 - CLI: `--config`, positional config, `--command`, `--json`, `--tunnel`, `--dry-run`, `--help`, `--version`
-- Process manager: concurrent shell spawn, name prefixes, `prefixColor` / `prefixColors: auto`, `handleInput`, `beforeCommands` / `afterCommands`, kill-others-on-failure, SIGINT cleanup
+- Process manager: concurrent shell spawn, `[name]` prefixes (color on the bracket token only), `prefixColor` / `prefixColors: auto`, `handleInput`, `beforeCommands` / `afterCommands`, kill-others-on-failure, SIGINT cleanup
 - Cloudflare named tunnel: `cloudflared` create/route/run + DNS API; abort if token or ingress missing; cleanup on exit
 - JS/TS config via Node + Jiti when those files are used
 

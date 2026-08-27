@@ -1,0 +1,21 @@
+tunnelEnabled: false
+concurrentlyOptions:
+  killOthers: failure
+  handleInput: false
+beforeCommands:
+  - docker compose -f docker-compose.yml up -d --wait
+afterCommands:
+  - docker compose -f docker-compose.yml down -v
+commands:
+  - name: redis
+    prefixColor: red
+    command: >-
+      sh -c 'i=0; until docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG;
+      do i=$((i+1)); if [ "$i" -ge 20 ]; then exit 1; fi; sleep 0.25; done;
+      docker compose exec -T redis redis-cli ping'
+  - name: web
+    prefixColor: cyan
+    command: >-
+      sh -c 'url=http://127.0.0.1:18081/; i=0; fetch() { wget -qO- "$url" 2>/dev/null || curl -fsS "$url"; };
+      until fetch >/dev/null; do i=$((i+1)); if [ "$i" -ge 20 ]; then exit 1; fi; sleep 0.25; done;
+      fetch'

@@ -1,0 +1,16 @@
+tunnelEnabled: false
+concurrentlyOptions:
+  killOthers: failure
+  handleInput: false
+beforeCommands:
+  - docker compose -f docker-compose.yml up -d --wait
+afterCommands:
+  - docker compose -f docker-compose.yml down -v
+commands:
+  - name: redis
+    prefixColor: red
+    # Dummy: prove Redis answered PONG, then exit 0 so afterCommands can down.
+    command: >-
+      sh -c 'i=0; until docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG;
+      do i=$((i+1)); if [ "$i" -ge 20 ]; then exit 1; fi; sleep 0.25; done;
+      docker compose exec -T redis redis-cli ping'
