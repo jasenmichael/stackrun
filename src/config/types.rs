@@ -19,6 +19,14 @@ impl StackrunConfig {
         self.tunnel_enabled.unwrap_or(false)
     }
 
+    /// True when a command has both a non-empty `url` and `tunnelUrl`.
+    pub fn has_tunnel_ingress(&self) -> bool {
+        self.runnable_commands().iter().any(|c| {
+            c.url.as_deref().is_some_and(|s| !s.is_empty())
+                && c.tunnel_url.as_deref().is_some_and(|s| !s.is_empty())
+        })
+    }
+
     pub fn before_commands(&self) -> &[String] {
         self.before_commands.as_deref().unwrap_or(&[])
     }

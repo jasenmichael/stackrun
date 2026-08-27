@@ -186,6 +186,28 @@ fn loads_yaml() {
 }
 
 #[test]
+fn omitted_tunnel_enabled_with_ingress_enables() {
+    let report = assert_native_format(
+        "auto_tunnel",
+        "stack.config.yaml",
+        "from-auto-tunnel",
+        "echo from-auto-tunnel",
+    );
+    assert_eq!(report["config"]["tunnelEnabled"], true);
+}
+
+#[test]
+fn explicit_tunnel_enabled_false_keeps_ingress_disabled() {
+    let report = assert_native_format(
+        "explicit_off",
+        "stack.config.yaml",
+        "from-explicit-off",
+        "echo from-explicit-off",
+    );
+    assert_eq!(report["config"]["tunnelEnabled"], false);
+}
+
+#[test]
 fn loads_yml() {
     assert_native_format("yml", "stack.config.yml", "from-yml", "echo from-yml");
 }

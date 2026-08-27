@@ -101,6 +101,7 @@ See `STACK.md`. Short why:
 - Do not implement giget/remote extends.
 - Keep c12 extension order (JS/TS before YAML). If `stack.config.ts` and `stack.config.yaml` both exist, JS/TS wins and requires Node.
 - Keep `TUNNEL=true` exact match (not truthy `1` / `yes`).
+- Omitted `tunnelEnabled` + `url`/`tunnelUrl` enables the tunnel (explicit `false` still off).
 - Filter commands without a string `command`.
 - Truncate names to `prefixLength` (default 10).
 - Honor explicit `handleInput: false` (Node quirk dropped).

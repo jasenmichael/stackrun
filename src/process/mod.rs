@@ -28,6 +28,9 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
         pending_ingress = Some(tunnel::prepare(config.cf_tunnel_config.as_ref(), &cmds)?);
     } else {
         info!("Tunneling is disabled");
+        if !tunnel::ingress_from_commands(&cmds).is_empty() {
+            info!("Config has url/tunnelUrl pairs. Pass --tunnel or set TUNNEL=true to start cloudflared as a sibling process");
+        }
     }
 
     let exec_env: Vec<(String, String)> = std::env::vars().collect();
@@ -326,7 +329,7 @@ fn run_command(
     let code = status.code().unwrap_or(1) as u8;
     info!(
         "Command {name} {}",
-        if code == 0 { "exited" } else { "errored" }
+        command_finish_word(status.code(), shutting_down.load(Ordering::SeqCst))
     );
 
     if code != 0 && !shutting_down.load(Ordering::SeqCst) {
@@ -337,6 +340,17 @@ fn run_command(
     }
 
     Ok(code)
+}
+
+/// Ctrl+C / SIGTERM is a stop, not a command failure.
+fn command_finish_word(exit_code: Option<i32>, shutting_down: bool) -> &'static str {
+    if shutting_down || exit_code.is_none() {
+        "stopped"
+    } else if exit_code == Some(0) {
+        "exited"
+    } else {
+        "errored"
+    }
 }
 
 fn prefix_pipe<R: std::io::Read>(pipe: R, name: &str, color: Option<&str>, is_err: bool) {
@@ -454,5 +468,13 @@ mod tests {
             ..ConcurrentlyOptions::default()
         };
         assert_eq!(off.resolve_prefix_color(None, 0), None);
+    }
+
+    #[test]
+    fn ctrl_c_is_stopped_not_errored() {
+        assert_eq!(command_finish_word(None, false), "stopped");
+        assert_eq!(command_finish_word(Some(1), true), "stopped");
+        assert_eq!(command_finish_word(Some(0), false), "exited");
+        assert_eq!(command_finish_word(Some(1), false), "errored");
     }
 }

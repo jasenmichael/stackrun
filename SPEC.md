@@ -160,7 +160,7 @@ Other concurrently options (`cwd`, `maxProcesses`, `raw`, `restartTries`, `resta
 
 ## Process lifecycle (Rust)
 
-1. If `tunnelEnabled`: validate token + ingress. Missing token or no `url`/`tunnelUrl` pairs **aborts with a non-zero error** (Node logged and returned without an exit code).
+1. If `tunnelEnabled` (explicit true, `--tunnel` / `TUNNEL=true`, or omitted when commands have `url`+`tunnelUrl`): validate token + ingress. Explicit `tunnelEnabled: false` skips the tunnel. Missing token or no `url`/`tunnelUrl` pairs **aborts with a non-zero error** (Node logged and returned without an exit code).
 2. Log “Tunneling is enabled/disabled”.
 3. `beforeCommands`: sequential shell, stdio inherit. Failure aborts.
 4. If tunneling: create named tunnel (`cloudflared tunnel create`), route DNS, write `config.yml`, then spawn `cloudflared tunnel run` as a sibling process with prefix `Tunnel`.
@@ -207,6 +207,7 @@ These are required by the refactor goals, not Node bugs:
 8. **Explicit `handleInput: false` is honored.** Node’s `value || true` treated `false` as unset.
 9. **No rainbow tunnel prefix.** Default tunnel prefix color is cyan.
 10. **`--dry-run`** prints the loaded/effective config as JSON and exits without running processes or tunnels. `cfToken` in that JSON is redacted. Process env secrets are not dumped.
+11. **Omitted `tunnelEnabled` follows ingress.** If the file never sets the flag (Node playground / bugpin) but a command has both `url` and `tunnelUrl`, tunneling is on. Explicit `false` still disables. `--tunnel` / `TUNNEL=true` still force on.
 
 ## Open questions
 

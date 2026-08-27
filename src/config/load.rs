@@ -220,8 +220,11 @@ pub fn apply_defaults(config: &mut StackrunConfig) {
     }
     config.concurrently_options = Some(opts);
 
+    // Omitted `tunnelEnabled` follows ingress: url+tunnelUrl means on (bugpin /
+    // playground configs never set the flag; they passed `--tunnel`). Explicit
+    // `false` still disables. `--tunnel` / `TUNNEL=true` already set Some(true).
     if config.tunnel_enabled.is_none() {
-        config.tunnel_enabled = Some(false);
+        config.tunnel_enabled = Some(config.has_tunnel_ingress());
     }
     if config.before_commands.is_none() {
         config.before_commands = Some(Vec::new());
@@ -239,10 +242,17 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
     use std::fs;
+    use std::sync::{Mutex, OnceLock};
     use tempfile::tempdir;
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
 
     #[test]
     fn yaml_file_and_tunnel_env() {
+        let _g = env_lock();
         let dir = tempdir().unwrap();
         fs::write(
             dir.path().join("stack.config.yaml"),
@@ -267,6 +277,36 @@ mod tests {
             "python server.py"
         );
         assert!(loaded.config_file.is_none());
+    }
+
+    #[test]
+    fn omitted_tunnel_enabled_follows_ingress() {
+        let _g = env_lock();
+        env::remove_var("TUNNEL");
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("stack.config.yaml"),
+            "commands:\n  - command: echo hi\n    url: http://localhost:1\n    tunnelUrl: https://x.example\n",
+        )
+        .unwrap();
+        let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
+        let report = dry_run_report(&loaded);
+        assert!(report.config.tunnel_enabled());
+    }
+
+    #[test]
+    fn explicit_tunnel_enabled_false_wins_over_ingress() {
+        let _g = env_lock();
+        env::remove_var("TUNNEL");
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("stack.config.yaml"),
+            "tunnelEnabled: false\ncommands:\n  - command: echo hi\n    url: http://localhost:1\n    tunnelUrl: https://x.example\n",
+        )
+        .unwrap();
+        let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
+        let report = dry_run_report(&loaded);
+        assert!(!report.config.tunnel_enabled());
     }
 
     #[test]

@@ -80,7 +80,7 @@ stackrun [OPTIONS] [CONFIG]
 | `[CONFIG]` | Positional config path, used when `-c` / `--config` is absent |
 | `--command <SHELL>` | Run a single shell command. Does not require a config file. New in the Rust CLI. |
 | `--json <JSON>` | JSON config overlay (highest data priority). Implemented in Rust. |
-| `-t`, `--tunnel` | Set `tunnelEnabled` to true |
+| `-t`, `--tunnel` | Force `tunnelEnabled` to true |
 | `--dry-run` | Print effective config as JSON and exit. Does not start processes or tunnels. `cfToken` is redacted. |
 | `-h`, `--help` | Show help |
 | `-V`, `--version` | Print crate version |
@@ -93,7 +93,7 @@ stackrun --config ./stack.config.yaml
 stackrun custom.yaml
 stackrun --command "echo hello"
 stackrun --json '{"commands":[{"name":"hi","command":"echo hello"}]}'
-stackrun --tunnel
+stackrun --tunnel --config ./stack.config.ts
 stackrun --dry-run
 stackrun --dry-run --command "echo hello"
 ```
@@ -160,7 +160,7 @@ Top-level keys:
 | `commands` | array | `[]` | Required to run, unless `--command` or `--json` supplies them |
 | `beforeCommands` | string array | `[]` | Sequential hooks before services. Failure aborts the run. |
 | `afterCommands` | string array | `[]` | Sequential hooks after services. Skipped if the process group fails. |
-| `tunnelEnabled` | boolean | `false` | Enable named Cloudflare tunnels for `url`/`tunnelUrl` commands |
+| `tunnelEnabled` | boolean | auto | `true` / `--tunnel` / `TUNNEL=true` enable. Omitted with `url`+`tunnelUrl` also enables (Node configs like bugpin never set the flag). Explicit `false` disables. |
 | `cfTunnelConfig` | object | see below | Token, name, cleanup, tunnel process options |
 | `concurrentlyOptions` | object | see below | Process-manager options |
 
@@ -225,6 +225,8 @@ cfTunnelConfig:
 ```
 
 Token resolution when tunneling is enabled: `cfTunnelConfig.cfToken`, then `CF_TOKEN`, then `CLOUDFLARE_TOKEN`. Missing token or empty ingress aborts before `beforeCommands` with exit code 1. If a tunnel or DNS record already exists, set `removeExistingTunnel` / `removeExistingDns` to `true` (playground default) or the run errors.
+
+Tunneling turns on when `tunnelEnabled` is true, `--tunnel` / `TUNNEL=true`, **or** `tunnelEnabled` is omitted and a command has both `url` and `tunnelUrl`. Set `tunnelEnabled: false` to run those commands without `cloudflared`.
 
 ## Environment variables
 
