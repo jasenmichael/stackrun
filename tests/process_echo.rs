@@ -1,16 +1,16 @@
-use stackrun::config::types::{CommandEntry, CommandSpec, StackrunConfig};
-use stackrun::process;
+use stackrun::config::types::{CommandEntry, Command, StackrunConfig};
+use stackrun::stack;
 
 #[test]
 fn runs_echo_command() {
     let config = StackrunConfig {
-        commands: Some(vec![CommandEntry::Full(CommandSpec {
+        commands: Some(vec![CommandEntry::Full(Command {
             command: "echo stackrun-ok".into(),
             name: Some("echo".into()),
-            ..CommandSpec::default()
+            ..Command::default()
         })]),
         ..StackrunConfig::default()
     };
-    let code = process::run(&config).expect("process run");
+    let code = stack::run(&config).expect("stack run");
     assert_eq!(code, 0);
 }

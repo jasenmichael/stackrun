@@ -1,9 +1,9 @@
 use anyhow::Context;
 use clap::Parser;
 use stackrun::cli::Cli;
-use stackrun::config::load::{load_config, LoadOptions};
+use stackrun::config::{load_config, LoadOptions};
 use stackrun::logging;
-use stackrun::process;
+use stackrun::stack;
 use std::process::ExitCode;
 use tracing::{error, info};
 
@@ -44,7 +44,7 @@ fn run() -> anyhow::Result<u8> {
         info!("Running stackrun without a config file");
     }
 
-    let code = process::run(&loaded.config)?;
+    let code = stack::run(&loaded.config)?;
     info!("Stackrun completed");
     Ok(code)
 }

@@ -11,8 +11,9 @@ stackrun (Rust)
 ├── clap CLI
 ├── native config (JSON / JSONC / JSON5 / YAML / TOML / .env / .stackrc)
 ├── optional Node + Jiti subprocess (JS/TS config only)
-├── process manager (std::process + threads; no Tokio unless later justified)
-└── tunnel manager (independent; cloudflared / Cloudflare API — not embedded JS)
+├── stack run (hooks, tunnel session, concurrent commands)
+├── process (std::process + threads; no Tokio unless later justified)
+└── tunnel (independent; cloudflared / Cloudflare API — not embedded JS)
 ```
 
 ### Layout
@@ -21,7 +22,7 @@ stackrun (Rust)
 | --- | --- |
 | `Cargo.toml` | Single binary crate |
 | `src/main.rs` | CLI entry |
-| `src/lib.rs` | Config, process, tunnel, bridge |
+| `src/lib.rs` | Config load, stack run, process, tunnel (Jiti bridge is crate-private) |
 | `tests/` | Integration tests |
 | `src/` on `main` | Historical Node implementation (not on this branch) |
 

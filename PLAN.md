@@ -45,7 +45,8 @@ src/
 ├── config       discover + parse + merge + env  →  StackrunConfig
 │     native     json/jsonc/json5/yaml/toml/.env/.stackrc
 │     bridge     Node+Jiti subprocess (JS/TS only)
-├── process      spawn, prefix, signals, before/after, kill-others
+├── stack        beforeCommands, tunnel session, concurrent commands, afterCommands, cleanup
+├── process      spawn, prefix, signals, kill-others (children only)
 └── tunnel       build ingress + run/stop tunnel (independent)
 ```
 
@@ -56,18 +57,28 @@ src/
 | Module | Responsibility |
 | --- | --- |
 | `error` | `thiserror` error type |
-| `config::types` | `StackrunConfig`, commands, tunnel config, concurrently options |
-| `config::discover` | File probe matching c12 paths + extensions |
-| `config::parse` | Per-format parsers |
-| `config::merge` | defu-like merge, `extends`, `$env` |
-| `config::dotenv` | `.env` load + interpolation |
-| `config::rc` | rc9-style `.stackrc` |
-| `config::load` | Orchestrate load + CLI/env overlays |
+| `config` | Public: `load_config`, types. Private: discover, parse, merge, dotenv, rc |
 | `cli` | clap definition, version, aliases |
 | `bridge` | Detect JS/TS; spawn Node+Jiti |
-| `process` | Child lifecycle |
-| `tunnel` | Cloudflare tunnel manager |
+| `stack` | Stack run: hooks, tunnel session, concurrent commands, cleanup |
+| `process` | Child spawn, prefix, SIGINT, kill-others |
+| `tunnel` | Cloudflare tunnel resource (`TunnelSession`) + cloudflared / DNS |
 | `logging` | tracing setup |
+
+## Architecture deepening
+
+Follow-on after the Rust port. Behavior stays the same unless a row says otherwise. Do in this order.
+
+| # | Change | Status | Notes |
+| --- | --- | --- | --- |
+| 1 | Extract stack run from `process` | Done | `stack::run` / `stack::run_with_tunnel` own lifecycle. `process` only children. `main` and tests call `stack`. |
+| 2 | Effective `StackrunConfig` at load | Done | `load_config` applies defaults once. `--dry-run` only redacts. `stack` does not call `apply_defaults`. |
+| 3 | Domain names for Rust types | Done | `ProcessOptions` / `Command`. Field `process_options` serde-renames to `concurrentlyOptions`. Ctrl+C stops every command then runs `afterCommands` (failure still skips). |
+| 4 | Split `TunnelSession` vs tunnel command | Done | Session = cloudflared resource (id, creds, ingress). Tunnel child = a `Command` from `commandOptions` in `stack`. |
+| 5 | Hide config pipeline behind load | Done | `discover`/`parse`/`merge`/`dotenv`/`rc` are crate-private. External interface is `load_config`. RC beats `extends` when main omits a key (SPEC). No `ConfigParser` trait. |
+| 6 | Process spawn seam | Done (fakes only) | No spawn trait (one adapter). `MockCloudflared` exported; `tests/tunnel_fakes.rs` calls `stack::run_with_tunnel`. |
+
+#1 first: `src/stack.rs` is the product entry. `process` exposes `run_hook` + `run_concurrent`. Tunnel stays a two-adapter seam (`CloudflaredOps`, `DnsApi`). No new traits.
 
 ### Crate choices
 
@@ -106,7 +117,7 @@ See `STACK.md`. Short why:
 - Truncate names to `prefixLength` (default 10).
 - Honor explicit `handleInput: false` (Node quirk dropped).
 - Missing token / empty ingress aborts with a non-zero error (no processes).
-- Skip `afterCommands` on process-group failure.
+- Skip `afterCommands` on process-group failure. Ctrl+C stops every command, then `afterCommands` run.
 - No rainbow tunnel name; default cyan.
 - This branch has no Node application. Reference `main` for the old sources.
 

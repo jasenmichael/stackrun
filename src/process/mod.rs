@@ -1,83 +1,33 @@
-use crate::config::load::apply_defaults;
-use crate::config::types::{CommandSpec, ConcurrentlyOptions, StackrunConfig};
+use crate::config::types::{Command, ProcessOptions};
 use crate::error::Error;
-use crate::tunnel::{self, TunnelRuntime, TunnelSession};
 use owo_colors::OwoColorize;
 use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
+use std::process::{Command as StdCommand, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tracing::info;
 
-/// Run beforeCommands, concurrent commands (plus optional tunnel), afterCommands.
-pub fn run(config: &StackrunConfig) -> Result<u8, Error> {
-    run_with_tunnel(config, TunnelRuntime::real())
+/// Concurrent children to spawn: prefixed output, kill-others, SIGINT.
+pub struct ConcurrentRun {
+    pub commands: Vec<Command>,
+    pub options: ProcessOptions,
+    pub apply_tunnel_env: bool,
 }
 
-/// Same as [`run`] with an injectable tunnel backend (tests).
-pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Result<u8, Error> {
-    let mut config = config.clone();
-    apply_defaults(&mut config);
+/// Result of [`run_concurrent`] after all children have exited.
+pub struct ConcurrentOutcome {
+    pub worst_code: u8,
+    pub interrupted: bool,
+}
 
-    let tunnel_enabled = config.tunnel_enabled();
-    let cmds = config.runnable_commands();
-    let mut pending_ingress = None;
-    if tunnel_enabled {
-        info!("Tunneling is enabled");
-        pending_ingress = Some(tunnel::prepare(config.cf_tunnel_config.as_ref(), &cmds)?);
-    } else {
-        info!("Tunneling is disabled");
-        if !tunnel::ingress_from_commands(&cmds).is_empty() {
-            info!("Config has url/tunnelUrl pairs. Pass --tunnel or set TUNNEL=true to start cloudflared as a sibling process");
-        }
-    }
-
-    let exec_env: Vec<(String, String)> = std::env::vars().collect();
-
-    if config.before_commands().is_empty() {
-        info!("No beforeCommands to run");
-    } else {
-        info!("Running beforeCommands");
-        for command in config.before_commands() {
-            info!("Running beforeCommand: {command}");
-            run_hook(command, &exec_env, true)?;
-        }
-    }
-
-    let prefix_length = config
-        .concurrently_options
-        .as_ref()
-        .map(|o| o.prefix_length_or_default())
-        .unwrap_or(10);
-    let kill_on_failure = config
-        .concurrently_options
-        .as_ref()
-        .map(|o| o.kill_others_on_failure())
-        .unwrap_or(true);
-    let handle_input = config
-        .concurrently_options
-        .as_ref()
-        .map(|o| o.handle_input_or_default())
-        .unwrap_or(true);
-    let conc_opts = config.concurrently_options.clone().unwrap_or_default();
-
-    let mut session: Option<TunnelSession> = None;
-    if let Some(ingress) = pending_ingress {
-        let token = tunnel::resolve_token(config.cf_tunnel_config.as_ref())
-            .ok_or(Error::CloudflareTokenRequired)?;
-        session = Some(tunnel::setup(
-            &runtime,
-            config.cf_tunnel_config.as_ref(),
-            ingress,
-            token,
-        )?);
-    }
-
-    let mut specs = cmds;
-    if specs.is_empty() && session.is_none() {
-        return Err(Error::NoCommands);
-    }
+/// Spawn and join concurrent commands. Does not run hooks or tunnels.
+pub fn run_concurrent(run: ConcurrentRun) -> Result<ConcurrentOutcome, Error> {
+    let prefix_length = run.options.prefix_length_or_default();
+    let kill_on_failure = run.options.kill_others_on_failure();
+    let handle_input = run.options.handle_input_or_default();
+    let conc_opts = run.options;
+    let apply_tunnel_env = run.apply_tunnel_env;
 
     let failed = Arc::new(AtomicBool::new(false));
     let shutting_down = Arc::new(AtomicBool::new(false));
@@ -93,27 +43,13 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
     }
 
     let mut joins = Vec::new();
-    let mut index = 0usize;
-
-    if let Some(ref sess) = session {
-        let spec = CommandSpec {
-            command: tunnel::run_command_line(sess),
-            name: Some(sess.run_name.clone()),
-            cwd: sess.run_cwd.clone(),
-            prefix_color: sess.run_color.clone(),
-            env: config
-                .cf_tunnel_config
-                .as_ref()
-                .and_then(|c| c.command_options.as_ref())
-                .and_then(|o| o.env.clone()),
-            ..CommandSpec::default()
-        };
+    for (index, spec) in run.commands.into_iter().enumerate() {
         spawn_one(
             index,
             spec,
             prefix_length,
             &conc_opts,
-            false,
+            apply_tunnel_env,
             handle_input,
             kill_on_failure,
             &failed,
@@ -121,24 +57,6 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
             &children,
             &mut joins,
         );
-        index += 1;
-    }
-
-    for spec in specs.drain(..) {
-        spawn_one(
-            index,
-            spec,
-            prefix_length,
-            &conc_opts,
-            tunnel_enabled,
-            handle_input,
-            kill_on_failure,
-            &failed,
-            &shutting_down,
-            &children,
-            &mut joins,
-        );
-        index += 1;
     }
 
     let mut worst: u8 = 0;
@@ -149,49 +67,23 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
                     worst = code;
                 }
             }
-            Ok(Err(err)) => {
-                if let Some(ref sess) = session {
-                    tunnel::cleanup(&runtime, sess);
-                }
-                return Err(err);
-            }
-            Err(_) => {
-                if let Some(ref sess) = session {
-                    tunnel::cleanup(&runtime, sess);
-                }
-                return Err(Error::Message("command thread panicked".into()));
-            }
+            Ok(Err(err)) => return Err(err),
+            Err(_) => return Err(Error::Message("command thread panicked".into())),
         }
     }
 
-    if let Some(ref sess) = session {
-        tunnel::cleanup(&runtime, sess);
-    }
-
-    if shutting_down.load(Ordering::SeqCst) {
-        return Ok(if worst == 0 { 1 } else { worst });
-    }
-
-    if config.after_commands().is_empty() {
-        info!("No afterCommands to run");
-    } else if worst == 0 {
-        info!("Running afterCommands");
-        for command in config.after_commands() {
-            info!("Running afterCommand: {command}");
-            run_hook(command, &exec_env, false)?;
-        }
-    }
-
-    let _ = index;
-    Ok(worst)
+    Ok(ConcurrentOutcome {
+        worst_code: worst,
+        interrupted: shutting_down.load(Ordering::SeqCst),
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
 fn spawn_one(
     index: usize,
-    spec: CommandSpec,
+    spec: Command,
     prefix_length: usize,
-    conc_opts: &ConcurrentlyOptions,
+    conc_opts: &ProcessOptions,
     tunnel_enabled: bool,
     handle_input: bool,
     kill_on_failure: bool,
@@ -233,7 +125,8 @@ struct ChildHandle {
     child_id: u32,
 }
 
-fn run_hook(command: &str, env: &[(String, String)], before: bool) -> Result<(), Error> {
+/// Sequential shell hook (beforeCommands / afterCommands). Stdio inherit.
+pub fn run_hook(command: &str, env: &[(String, String)], before: bool) -> Result<(), Error> {
     let mut cmd = shell_command(command);
     for (k, v) in env {
         cmd.env(k, v);
@@ -260,7 +153,7 @@ fn run_hook(command: &str, env: &[(String, String)], before: bool) -> Result<(),
 #[allow(clippy::too_many_arguments)]
 fn run_command(
     name: String,
-    spec: CommandSpec,
+    spec: Command,
     color: Option<String>,
     children: Arc<Mutex<Vec<ChildHandle>>>,
     failed: Arc<AtomicBool>,
@@ -385,13 +278,13 @@ fn colorize(text: &str, color: Option<&str>) -> String {
     }
 }
 
-fn shell_command(command: &str) -> Command {
+fn shell_command(command: &str) -> StdCommand {
     if cfg!(windows) {
-        let mut cmd = Command::new("cmd");
+        let mut cmd = StdCommand::new("cmd");
         cmd.arg("/C").arg(command);
         cmd
     } else {
-        let mut cmd = Command::new("sh");
+        let mut cmd = StdCommand::new("sh");
         cmd.arg("-c").arg(command);
         cmd
     }
@@ -412,7 +305,7 @@ fn kill_all(children: &Arc<Mutex<Vec<ChildHandle>>>) {
         }
         #[cfg(not(unix))]
         {
-            let _ = Command::new("taskkill")
+            let _ = StdCommand::new("taskkill")
                 .args(["/PID", &child.child_id.to_string(), "/T", "/F"])
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
@@ -447,11 +340,11 @@ mod tests {
         env.insert("FOO".into(), EnvValue::String("base".into()));
         let mut tunnel_env = BTreeMap::new();
         tunnel_env.insert("FOO".into(), EnvValue::String("tun".into()));
-        let spec = CommandSpec {
+        let spec = Command {
             command: "echo".into(),
             env: Some(env),
             tunnel_env: Some(tunnel_env),
-            ..CommandSpec::default()
+            ..Command::default()
         };
         assert_eq!(spec.effective_env(false).get("FOO").unwrap(), "base");
         assert_eq!(spec.effective_env(true).get("FOO").unwrap(), "tun");
@@ -459,18 +352,18 @@ mod tests {
 
     #[test]
     fn auto_prefix_cycles() {
-        let opts = ConcurrentlyOptions {
+        let opts = ProcessOptions {
             prefix_colors: Some(crate::config::types::PrefixColors::Named("auto".into())),
-            ..ConcurrentlyOptions::default()
+            ..ProcessOptions::default()
         };
         assert_eq!(opts.resolve_prefix_color(None, 0).as_deref(), Some("cyan"));
         assert_eq!(
             opts.resolve_prefix_color(Some("green"), 0).as_deref(),
             Some("green")
         );
-        let off = ConcurrentlyOptions {
+        let off = ProcessOptions {
             prefix_colors: Some(crate::config::types::PrefixColors::Flag(false)),
-            ..ConcurrentlyOptions::default()
+            ..ProcessOptions::default()
         };
         assert_eq!(off.resolve_prefix_color(None, 0), None);
     }
@@ -491,9 +384,9 @@ mod tests {
 
     #[test]
     fn prefix_truncates_name_inside_brackets() {
-        let spec = CommandSpec {
+        let spec = Command {
             name: Some("verylongname".into()),
-            ..CommandSpec::default()
+            ..Command::default()
         };
         let name = spec.display_name(10);
         assert_eq!(format_prefixed_line(&name, "x", None), "[verylongna] x");

@@ -1,9 +1,9 @@
-pub mod discover;
-pub mod dotenv;
-pub mod load;
-pub mod merge;
-pub mod parse;
-pub mod rc;
+mod discover;
+mod dotenv;
+mod load;
+mod merge;
+mod parse;
+mod rc;
 pub mod types;
 
 pub use load::{

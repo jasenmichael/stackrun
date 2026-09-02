@@ -2,12 +2,14 @@ mod cloudflared;
 mod dns;
 mod session;
 
-use crate::config::types::{CfTunnelConfig, CommandSpec};
+use crate::config::types::{CfTunnelConfig, Command};
 use crate::error::Error;
 use std::env;
 use std::sync::Arc;
 
-pub use cloudflared::{default_config_dir, CloudflaredOps, RealCloudflared};
+pub use cloudflared::{
+    default_config_dir, CloudflaredOps, MockCloudflared, RealCloudflared, TunnelRow,
+};
 pub use dns::{DnsApi, RealDns, RecordingDns};
 pub use session::{cleanup, run_command_line, setup, TunnelSession};
 
@@ -52,7 +54,7 @@ pub fn hostname_from_tunnel_url(tunnel_url: &str) -> String {
         .to_string()
 }
 
-pub fn ingress_from_commands(commands: &[CommandSpec]) -> Vec<Ingress> {
+pub fn ingress_from_commands(commands: &[Command]) -> Vec<Ingress> {
     commands
         .iter()
         .filter_map(|cmd| {
@@ -87,7 +89,7 @@ pub fn resolve_tunnel_name(cfg: Option<&CfTunnelConfig>) -> String {
 /// Validate tunnel inputs the same way Node does (token + at least one ingress).
 pub fn prepare(
     cfg: Option<&CfTunnelConfig>,
-    commands: &[CommandSpec],
+    commands: &[Command],
 ) -> Result<Vec<Ingress>, Error> {
     if resolve_token(cfg).is_none() {
         return Err(Error::CloudflareTokenRequired);
@@ -117,11 +119,11 @@ mod tests {
 
     #[test]
     fn prepare_requires_token() {
-        let cmds = [CommandSpec {
+        let cmds = [Command {
             command: "echo".into(),
             url: Some("http://localhost:1".into()),
             tunnel_url: Some("https://x.example".into()),
-            ..CommandSpec::default()
+            ..Command::default()
         }];
         let err = prepare(None, &cmds).unwrap_err();
         assert!(matches!(err, Error::CloudflareTokenRequired));

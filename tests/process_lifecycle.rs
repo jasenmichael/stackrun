@@ -1,7 +1,7 @@
 use stackrun::config::types::{
-    CfTunnelConfig, CommandEntry, CommandSpec, ConcurrentlyOptions, StackrunConfig,
+    CfTunnelConfig, CommandEntry, Command, ProcessOptions, StackrunConfig,
 };
-use stackrun::process;
+use stackrun::stack;
 use stackrun::Error;
 use std::fs;
 use std::sync::{Mutex, OnceLock};
@@ -21,15 +21,15 @@ fn missing_token_does_not_run_commands() {
     let marker = dir.path().join("ran");
     let config = StackrunConfig {
         tunnel_enabled: Some(true),
-        commands: Some(vec![CommandEntry::Full(CommandSpec {
+        commands: Some(vec![CommandEntry::Full(Command {
             command: format!("echo ran > {}", marker.display()),
             url: Some("http://localhost:9".into()),
             tunnel_url: Some("https://api.example.dev".into()),
-            ..CommandSpec::default()
+            ..Command::default()
         })]),
         ..StackrunConfig::default()
     };
-    let err = process::run(&config).unwrap_err();
+    let err = stack::run(&config).unwrap_err();
     assert!(matches!(err, Error::CloudflareTokenRequired));
     assert!(!marker.exists());
 }
@@ -46,13 +46,13 @@ fn empty_ingress_aborts_before_commands() {
             ..CfTunnelConfig::default()
         }),
         before_commands: Some(vec![format!("echo x > {}", marker.display())]),
-        commands: Some(vec![CommandEntry::Full(CommandSpec {
+        commands: Some(vec![CommandEntry::Full(Command {
             command: "echo hi".into(),
-            ..CommandSpec::default()
+            ..Command::default()
         })]),
         ..StackrunConfig::default()
     };
-    let err = process::run(&config).unwrap_err();
+    let err = stack::run(&config).unwrap_err();
     assert!(matches!(err, Error::NoTunnelIngress));
     assert!(!marker.exists());
 }
@@ -63,13 +63,13 @@ fn before_command_failure_skips_main() {
     let marker = dir.path().join("main");
     let config = StackrunConfig {
         before_commands: Some(vec!["sh -c 'exit 2'".into()]),
-        commands: Some(vec![CommandEntry::Full(CommandSpec {
+        commands: Some(vec![CommandEntry::Full(Command {
             command: format!("echo ran > {}", marker.display()),
-            ..CommandSpec::default()
+            ..Command::default()
         })]),
         ..StackrunConfig::default()
     };
-    let err = process::run(&config).unwrap_err();
+    let err = stack::run(&config).unwrap_err();
     assert!(matches!(err, Error::BeforeCommandFailed { .. }));
     assert!(!marker.exists());
 }
@@ -79,19 +79,19 @@ fn after_commands_skipped_on_failure() {
     let dir = tempdir().unwrap();
     let marker = dir.path().join("after");
     let config = StackrunConfig {
-        concurrently_options: Some(ConcurrentlyOptions {
+        process_options: Some(ProcessOptions {
             kill_others: Some(stackrun::config::types::KillOthers::One("failure".into())),
-            ..ConcurrentlyOptions::default()
+            ..ProcessOptions::default()
         }),
         after_commands: Some(vec![format!("echo after > {}", marker.display())]),
-        commands: Some(vec![CommandEntry::Full(CommandSpec {
+        commands: Some(vec![CommandEntry::Full(Command {
             command: "sh -c 'exit 7'".into(),
             name: Some("fail".into()),
-            ..CommandSpec::default()
+            ..Command::default()
         })]),
         ..StackrunConfig::default()
     };
-    let code = process::run(&config).expect("run");
+    let code = stack::run(&config).expect("run");
     assert_eq!(code, 7);
     assert!(!marker.exists());
 }
@@ -104,11 +104,11 @@ fn tunnel_env_applied_when_enabled_via_effective_env() {
     env.insert("MYVAR".into(), EnvValue::String("base".into()));
     let mut tunnel_env = BTreeMap::new();
     tunnel_env.insert("MYVAR".into(), EnvValue::String("tun".into()));
-    let spec = CommandSpec {
+    let spec = Command {
         command: "true".into(),
         env: Some(env),
         tunnel_env: Some(tunnel_env),
-        ..CommandSpec::default()
+        ..Command::default()
     };
     assert_eq!(spec.effective_env(false).get("MYVAR").unwrap(), "base");
     assert_eq!(spec.effective_env(true).get("MYVAR").unwrap(), "tun");
@@ -124,31 +124,31 @@ fn command_env_reaches_child() {
         stackrun::config::types::EnvValue::String("from-config".into()),
     );
     let config = StackrunConfig {
-        commands: Some(vec![CommandEntry::Full(CommandSpec {
+        commands: Some(vec![CommandEntry::Full(Command {
             command: format!("sh -c 'printf %s \"$STACKRUN_PROBE\" > {}'", out.display()),
             env: Some(env),
-            ..CommandSpec::default()
+            ..Command::default()
         })]),
         ..StackrunConfig::default()
     };
-    let code = process::run(&config).expect("run");
+    let code = stack::run(&config).expect("run");
     assert_eq!(code, 0);
     assert_eq!(fs::read_to_string(&out).unwrap(), "from-config");
 }
 
 #[test]
 fn handle_input_false_is_kept() {
-    use stackrun::config::load::apply_defaults;
+    use stackrun::apply_defaults;
     let mut config = StackrunConfig {
-        concurrently_options: Some(ConcurrentlyOptions {
+        process_options: Some(ProcessOptions {
             handle_input: Some(false),
-            ..ConcurrentlyOptions::default()
+            ..ProcessOptions::default()
         }),
         ..StackrunConfig::default()
     };
     apply_defaults(&mut config);
     assert_eq!(
-        config.concurrently_options.as_ref().unwrap().handle_input,
+        config.process_options.as_ref().unwrap().handle_input,
         Some(false)
     );
 }

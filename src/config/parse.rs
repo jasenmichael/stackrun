@@ -100,6 +100,26 @@ mod tests {
     }
 
     #[test]
+    fn json_commands() {
+        let v = parse_str(
+            Path::new("x.json"),
+            r#"{"commands":[{"command":"echo json"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(v["commands"][0]["command"], "echo json");
+    }
+
+    #[test]
+    fn json5_commands() {
+        let v = parse_str(
+            Path::new("x.json5"),
+            "{ commands: [{ command: 'echo json5' }] }",
+        )
+        .unwrap();
+        assert_eq!(v["commands"][0]["command"], "echo json5");
+    }
+
+    #[test]
     fn yaml_commands() {
         let v = parse_str(
             Path::new("x.yaml"),

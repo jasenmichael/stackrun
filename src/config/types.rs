@@ -6,7 +6,9 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct StackrunConfig {
-    pub concurrently_options: Option<ConcurrentlyOptions>,
+    /// On-disk key stays `concurrentlyOptions`.
+    #[serde(rename = "concurrentlyOptions")]
+    pub process_options: Option<ProcessOptions>,
     pub tunnel_enabled: Option<bool>,
     pub cf_tunnel_config: Option<CfTunnelConfig>,
     pub before_commands: Option<Vec<String>>,
@@ -36,21 +38,22 @@ impl StackrunConfig {
     }
 
     /// Commands that have a non-empty string `command` (Node filters the rest).
-    pub fn runnable_commands(&self) -> Vec<CommandSpec> {
+    pub fn runnable_commands(&self) -> Vec<Command> {
         self.commands
             .as_deref()
             .unwrap_or(&[])
             .iter()
-            .filter_map(CommandEntry::to_spec)
+            .filter_map(CommandEntry::to_command)
             .filter(|c| !c.command.is_empty())
             .collect()
     }
 }
 
-/// concurrently options that Stackrun actually defaults / documents, plus passthrough extras.
+/// Process options Stackrun defaults / documents, plus passthrough extras.
+/// On-disk key is `concurrentlyOptions`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-pub struct ConcurrentlyOptions {
+pub struct ProcessOptions {
     pub kill_others: Option<KillOthers>,
     pub handle_input: Option<bool>,
     pub prefix_colors: Option<PrefixColors>,
@@ -69,7 +72,7 @@ pub struct ConcurrentlyOptions {
     pub extra: BTreeMap<String, Value>,
 }
 
-impl ConcurrentlyOptions {
+impl ProcessOptions {
     pub fn prefix_length_or_default(&self) -> usize {
         self.prefix_length.unwrap_or(10) as usize
     }
@@ -161,25 +164,26 @@ pub struct TunnelCommandOptions {
 #[serde(untagged)]
 pub enum CommandEntry {
     Shell(String),
-    Full(CommandSpec),
+    Full(Command),
 }
 
 impl CommandEntry {
-    pub fn to_spec(&self) -> Option<CommandSpec> {
+    pub fn to_command(&self) -> Option<Command> {
         match self {
-            CommandEntry::Shell(command) if !command.is_empty() => Some(CommandSpec {
+            CommandEntry::Shell(command) if !command.is_empty() => Some(Command {
                 command: command.clone(),
-                ..CommandSpec::default()
+                ..Command::default()
             }),
-            CommandEntry::Full(spec) if !spec.command.is_empty() => Some(spec.clone()),
+            CommandEntry::Full(command) if !command.command.is_empty() => Some(command.clone()),
             _ => None,
         }
     }
 }
 
+/// One stack command (a concurrent OS process).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-pub struct CommandSpec {
+pub struct Command {
     pub command: String,
     pub name: Option<String>,
     pub cwd: Option<String>,
@@ -192,7 +196,7 @@ pub struct CommandSpec {
     pub tunnel_env: Option<BTreeMap<String, EnvValue>>,
 }
 
-impl CommandSpec {
+impl Command {
     pub fn effective_env(&self, tunnel_enabled: bool) -> BTreeMap<String, String> {
         let mut out = BTreeMap::new();
         if let Some(env) = &self.env {

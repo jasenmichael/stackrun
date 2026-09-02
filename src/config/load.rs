@@ -58,8 +58,8 @@ pub struct LoadedConfig {
 pub struct DryRunReport {
     /// Resolved config file path, if a file was used.
     pub config_file: Option<PathBuf>,
-    /// Effective config after file load, RC, extends, env overlays, and CLI flags.
-    /// `cfTunnelConfig.cfToken` is redacted when present.
+    /// Effective config after file load, RC, extends, env overlays, CLI flags,
+    /// and defaults. `cfTunnelConfig.cfToken` is redacted when present.
     pub config: StackrunConfig,
 }
 
@@ -81,21 +81,16 @@ pub fn load_config(options: LoadOptions) -> Result<LoadedConfig, Error> {
         layers.push(parse_json_overlay(json)?);
     }
 
+    // SPEC: main > RC > extends (defu: earlier layer wins).
+    let mut extends_layers = Vec::new();
     if let Some(path) = &resolved {
         let mut main = load_layer(&options.cwd, path)?;
         let extends = take_extends(&mut main)?;
-        let mut extended = Vec::new();
         for source in extends {
             let ext_path = resolve_extends_path(path, &source);
-            let layer = load_layer(&options.cwd, &ext_path)?;
-            extended.push(layer);
+            extends_layers.push(load_layer(&options.cwd, &ext_path)?);
         }
-        // c12: defu(main, ...layers) — main wins, extends are fallbacks
-        let mut combined = main;
-        for layer in extended {
-            combined = defu(combined, layer);
-        }
-        layers.push(combined);
+        layers.push(main);
     }
 
     let rc_path = options.cwd.join(".stackrc");
@@ -104,6 +99,8 @@ pub fn load_config(options: LoadOptions) -> Result<LoadedConfig, Error> {
         rc = apply_env_overlay(rc, env::var("NODE_ENV").ok().as_deref());
         layers.push(rc);
     }
+
+    layers.extend(extends_layers);
 
     let merged = if layers.is_empty() {
         json!({})
@@ -127,6 +124,7 @@ pub fn load_config(options: LoadOptions) -> Result<LoadedConfig, Error> {
 
     apply_env_var_overrides(&mut config);
     apply_cli_overrides(&mut config, &options);
+    apply_defaults(&mut config);
 
     Ok(LoadedConfig {
         config,
@@ -186,11 +184,10 @@ pub fn redact_secrets(config: &mut StackrunConfig) {
     }
 }
 
-/// Effective config for `--dry-run`: same overlays as a real run, plus run-time
-/// defaults, with secrets redacted. Does not spawn processes or tunnels.
+/// Effective config for `--dry-run`: loaded config with secrets redacted.
+/// Does not spawn processes or tunnels.
 pub fn dry_run_report(loaded: &LoadedConfig) -> DryRunReport {
     let mut config = loaded.config.clone();
-    apply_defaults(&mut config);
     redact_secrets(&mut config);
     DryRunReport {
         config_file: loaded.config_file.clone(),
@@ -203,9 +200,9 @@ pub fn format_dry_run(loaded: &LoadedConfig) -> Result<String, serde_json::Error
     serde_json::to_string_pretty(&dry_run_report(loaded))
 }
 
-/// Defaults applied at run time. Explicit `handleInput: false` is honored.
+/// Defaults applied at load. Explicit `handleInput: false` is honored.
 pub fn apply_defaults(config: &mut StackrunConfig) {
-    let mut opts = config.concurrently_options.clone().unwrap_or_default();
+    let mut opts = config.process_options.clone().unwrap_or_default();
     if opts.kill_others.is_none() {
         opts.kill_others = Some(super::types::KillOthers::One("failure".into()));
     }
@@ -218,7 +215,7 @@ pub fn apply_defaults(config: &mut StackrunConfig) {
     if opts.prefix_length.is_none() {
         opts.prefix_length = Some(10);
     }
-    config.concurrently_options = Some(opts);
+    config.process_options = Some(opts);
 
     // Omitted `tunnelEnabled` follows ingress: url+tunnelUrl means on (bugpin /
     // playground configs never set the flag; they passed `--tunnel`). Explicit
@@ -290,8 +287,27 @@ mod tests {
         )
         .unwrap();
         let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
+        assert!(loaded.config.tunnel_enabled());
         let report = dry_run_report(&loaded);
         assert!(report.config.tunnel_enabled());
+        assert_eq!(
+            loaded
+                .config
+                .process_options
+                .as_ref()
+                .unwrap()
+                .kill_others,
+            Some(crate::config::types::KillOthers::One("failure".into()))
+        );
+        assert_eq!(
+            loaded
+                .config
+                .process_options
+                .as_ref()
+                .unwrap()
+                .handle_input,
+            Some(true)
+        );
     }
 
     #[test]

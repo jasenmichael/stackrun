@@ -7,7 +7,8 @@ Commands are opaque OS processes: Node, Python, Go, shell, or any executable. Th
 ## Features
 
 - One config file for a local stack of services
-- Concurrent processes with prefixed, color-coded output
+- Concurrent processes with prefixed, color-coded output (more than one command at once)
+- Ctrl+C stops every command, then runs `afterCommands`
 - Native config without Node: JSON, JSONC, JSON5, YAML, TOML, `.env`, and `.stackrc`
 - Optional JS/TS config via Node + Jiti (only when you use those files)
 - Lifecycle hooks (`beforeCommands` / `afterCommands`)
@@ -41,6 +42,24 @@ cargo run -- --help
 ```
 
 This branch does not publish an npm package. Use the Rust binary.
+
+## Build
+
+Needs a [Rust](https://rustup.rs/) stable toolchain (`rust-toolchain.toml` pins `stable`).
+
+```sh
+# debug binary: target/debug/stackrun
+cargo build
+
+# release binary: target/release/stackrun
+cargo build --release
+
+# run without installing
+cargo run -- --help
+cargo run -- --config ./stack.config.yaml
+```
+
+`cargo install --path .` puts `stackrun` on your PATH. Tests: `cargo test`.
 
 ## Quick start
 
@@ -159,7 +178,7 @@ Top-level keys:
 | --- | --- | --- | --- |
 | `commands` | array | `[]` | Required to run, unless `--command` or `--json` supplies them |
 | `beforeCommands` | string array | `[]` | Sequential hooks before services. Failure aborts the run. |
-| `afterCommands` | string array | `[]` | Sequential hooks after services. Skipped if the process group fails. |
+| `afterCommands` | string array | `[]` | Sequential hooks after all commands stop. Skipped if a command fails. Still run after Ctrl+C. |
 | `tunnelEnabled` | boolean | auto | `true` / `--tunnel` / `TUNNEL=true` enable. Omitted with `url`+`tunnelUrl` also enables (Node configs like bugpin never set the flag). Explicit `false` disables. |
 | `cfTunnelConfig` | object | see below | Token, name, cleanup, tunnel process options |
 | `concurrentlyOptions` | object | see below | Process-manager options |
@@ -185,11 +204,11 @@ A command may also be a bare string: `commands: ["echo hello"]`.
 
 ### `beforeCommands` / `afterCommands`
 
-String arrays. Each item is run sequentially in a shell with inherited stdio. `beforeCommands` failure aborts. `afterCommands` run only if the concurrent commands succeed.
+String arrays. Each item is run sequentially in a shell with inherited stdio. `beforeCommands` failure aborts. `afterCommands` run when every concurrent command exits 0, **or** after Ctrl+C has stopped every command. They are skipped if a command fails (`killOthers: failure` kills the rest first).
 
 ### `concurrentlyOptions`
 
-Defaults applied at run time:
+Defaults applied at load (same value `--dry-run` prints):
 
 ```yaml
 concurrentlyOptions:
@@ -199,7 +218,9 @@ concurrentlyOptions:
   prefixLength: 10
 ```
 
-The process manager honors `killOthers` (kill the rest on failure), `prefixLength`, `handleInput` (stdin inherit vs null), and `prefixColors: auto` (cycle colors onto `[name]` when `prefixColor` is unset). Child logs look like `[nuxt] …` / `[tunnel] …` — color on the bracketed name only. Other concurrently-style keys (`maxProcesses`, `raw`, `restartTries`, and so on) are accepted in the file for compatibility and ignored.
+Stackrun starts every `commands` entry at once (that is the point). It honors `killOthers` (kill the rest on failure), `prefixLength`, `handleInput` (stdin inherit vs null), and `prefixColors: auto` (cycle colors onto `[name]` when `prefixColor` is unset). Child logs look like `[nuxt] …` / `[tunnel] …` — color on the bracketed name only. Other concurrently-style keys (`maxProcesses`, `raw`, `restartTries`, and so on) are accepted in the file for compatibility and ignored.
+
+Ctrl+C stops every running command (process groups on Unix), then runs `afterCommands`.
 
 ### `cfTunnelConfig`
 
@@ -339,7 +360,7 @@ Rust CLI on `refactor/rust`. Historical Node package is on `main`.
 
 - Native config load (JSON / JSONC / JSON5 / YAML / TOML / `.env` / `.stackrc` / local `extends` / `NODE_ENV` overlays)
 - CLI: `--config`, positional config, `--command`, `--json`, `--tunnel`, `--dry-run`, `--help`, `--version`
-- Process manager: concurrent shell spawn, `[name]` prefixes (color on the bracket token only), `prefixColor` / `prefixColors: auto`, `handleInput`, `beforeCommands` / `afterCommands`, kill-others-on-failure, SIGINT cleanup
+- Process manager: concurrent shell spawn of every command, `[name]` prefixes (color on the bracket token only), `prefixColor` / `prefixColors: auto`, `handleInput`, `beforeCommands` / `afterCommands`, kill-others-on-failure, Ctrl+C stops all commands then `afterCommands`
 - Cloudflare named tunnel: `cloudflared` create/route/run + DNS API; abort if token or ingress missing; cleanup on exit
 - JS/TS config via Node + Jiti when those files are used
 

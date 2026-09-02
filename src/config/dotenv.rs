@@ -1,4 +1,3 @@
-use serde_json::{Map, Value};
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -150,13 +149,14 @@ fn lookup(name: &str, file: &[(String, String)]) -> String {
 
 /// Helper for tests: parse `.env` content to a JSON object of interpolated values
 /// without writing process env.
-pub fn parse_env_to_value(contents: &str) -> Value {
+#[cfg(test)]
+fn parse_env_to_value(contents: &str) -> serde_json::Value {
     let pairs = interpolate(&parse_env_file(contents));
-    let mut map = Map::new();
+    let mut map = serde_json::Map::new();
     for (k, v) in pairs {
-        map.insert(k, Value::String(v));
+        map.insert(k, serde_json::Value::String(v));
     }
-    Value::Object(map)
+    serde_json::Value::Object(map)
 }
 
 #[cfg(test)]

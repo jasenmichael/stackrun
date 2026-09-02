@@ -1,6 +1,7 @@
 use crate::error::Error;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::Mutex;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TunnelRow {
@@ -102,6 +103,73 @@ pub fn parse_tunnel_list(stdout: &str) -> Vec<TunnelRow> {
             Some(TunnelRow { id, name })
         })
         .collect()
+}
+
+/// In-memory cloudflared adapter (tests). Second adapter next to [`RealCloudflared`].
+pub struct MockCloudflared {
+    pub has_cert: bool,
+    pub binary: String,
+    pub list: Mutex<Vec<TunnelRow>>,
+    pub created: Mutex<Vec<String>>,
+    pub deleted: Mutex<Vec<String>>,
+    pub routed: Mutex<Vec<(String, String)>>,
+    pub fail_list: bool,
+}
+
+impl Default for MockCloudflared {
+    fn default() -> Self {
+        Self {
+            has_cert: false,
+            binary: "cloudflared".into(),
+            list: Mutex::new(Vec::new()),
+            created: Mutex::new(Vec::new()),
+            deleted: Mutex::new(Vec::new()),
+            routed: Mutex::new(Vec::new()),
+            fail_list: false,
+        }
+    }
+}
+
+impl CloudflaredOps for MockCloudflared {
+    fn binary_path(&self) -> Result<String, Error> {
+        Ok(self.binary.clone())
+    }
+
+    fn has_cert(&self, _config_dir: &Path) -> bool {
+        self.has_cert
+    }
+
+    fn list_tunnels(&self) -> Result<Vec<TunnelRow>, Error> {
+        if self.fail_list {
+            return Err(Error::Cloudflared {
+                message: "list failed".into(),
+            });
+        }
+        Ok(self.list.lock().unwrap().clone())
+    }
+
+    fn delete_tunnel(&self, id: &str) -> Result<(), Error> {
+        self.deleted.lock().unwrap().push(id.to_string());
+        self.list.lock().unwrap().retain(|r| r.id != id);
+        Ok(())
+    }
+
+    fn create_tunnel(&self, name: &str) -> Result<(), Error> {
+        self.created.lock().unwrap().push(name.to_string());
+        self.list.lock().unwrap().push(TunnelRow {
+            id: "new-id".into(),
+            name: name.to_string(),
+        });
+        Ok(())
+    }
+
+    fn route_dns(&self, tunnel_name: &str, hostname: &str) -> Result<(), Error> {
+        self.routed
+            .lock()
+            .unwrap()
+            .push((tunnel_name.to_string(), hostname.to_string()));
+        Ok(())
+    }
 }
 
 pub fn default_config_dir() -> PathBuf {

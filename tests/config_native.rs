@@ -1,51 +1,51 @@
-use stackrun::config::load::{load_config, LoadOptions};
-use stackrun::config::parse::parse_str;
 use stackrun::config::types::CommandEntry;
+use stackrun::config::{load_config, LoadOptions};
 use std::fs;
-use std::path::Path;
 use tempfile::tempdir;
 
 #[test]
 fn loads_json_jsonc_json5_yaml_toml() {
-    let yaml = parse_str(
-        Path::new("t.yaml"),
-        "commands:\n  - name: api\n    command: python server.py\n    cwd: ./api\n",
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("stack.config.yaml"),
+        "commands:\n  - command: echo yaml\n",
     )
     .unwrap();
-    assert_eq!(yaml["commands"][0]["command"], "python server.py");
+    let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
+    assert_eq!(loaded.config.runnable_commands()[0].command, "echo yaml");
 
-    let toml = parse_str(
-        Path::new("t.toml"),
-        r#"
-tunnelEnabled = false
-[[commands]]
-name = "web"
-command = "npm run dev"
-"#,
-    )
-    .unwrap();
-    assert_eq!(toml["commands"][0]["name"], "web");
-
-    let json = parse_str(
-        Path::new("t.json"),
-        r#"{"commands":[{"command":"echo json"}]}"#,
-    )
-    .unwrap();
-    assert_eq!(json["commands"][0]["command"], "echo json");
-
-    let jsonc = parse_str(
-        Path::new("t.jsonc"),
-        "{ /* c */ \"commands\": [{ \"command\": \"echo jsonc\", }] }",
-    )
-    .unwrap();
-    assert_eq!(jsonc["commands"][0]["command"], "echo jsonc");
-
-    let json5 = parse_str(
-        Path::new("t.json5"),
-        "{ commands: [{ command: 'echo json5' }] }",
-    )
-    .unwrap();
-    assert_eq!(json5["commands"][0]["command"], "echo json5");
+    for (name, body, expect) in [
+        (
+            "a.json",
+            r#"{"commands":[{"command":"echo json"}]}"#,
+            "echo json",
+        ),
+        (
+            "a.jsonc",
+            "{ /* c */ \"commands\": [{ \"command\": \"echo jsonc\", }] }",
+            "echo jsonc",
+        ),
+        (
+            "a.json5",
+            "{ commands: [{ command: 'echo json5' }] }",
+            "echo json5",
+        ),
+        (
+            "a.toml",
+            "[[commands]]\ncommand = \"echo toml\"\n",
+            "echo toml",
+        ),
+    ] {
+        let path = dir.path().join(name);
+        fs::write(&path, body).unwrap();
+        let mut opts = LoadOptions::for_cwd(dir.path());
+        opts.config_file = path.to_string_lossy().into_owned();
+        let loaded = load_config(opts).unwrap();
+        assert_eq!(
+            loaded.config.runnable_commands()[0].command, expect,
+            "{name}"
+        );
+    }
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn local_extends() {
         .as_ref()
         .unwrap()
         .iter()
-        .filter_map(CommandEntry::to_spec)
+        .filter_map(CommandEntry::to_command)
         .map(|c| c.command)
         .collect();
     // child commands first (preferred), then unique from base
@@ -226,4 +226,26 @@ fn config_dir_stack_yaml() {
     .unwrap();
     let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
     assert_eq!(loaded.config.runnable_commands()[0].command, "echo hidden");
+}
+
+#[test]
+fn rc_beats_extends_when_main_omits_key() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("base.yaml"),
+        "tunnelEnabled: false\nbeforeCommands: [echo base]\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("stack.config.yaml"),
+        "extends: ./base.yaml\ncommands:\n  - command: echo main\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join(".stackrc"), "tunnelEnabled=true\n").unwrap();
+    let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
+    assert!(
+        loaded.config.tunnel_enabled(),
+        "SPEC: RC beats extends when main omits the key"
+    );
+    assert_eq!(loaded.config.before_commands(), &["echo base".to_string()]);
 }

@@ -13,13 +13,6 @@ pub fn is_js_ts_path(path: &Path) -> bool {
     extension_with_dot(path).is_some_and(|ext| JS_TS_EXTENSIONS.contains(&ext.as_str()))
 }
 
-pub fn is_native_path(path: &Path) -> bool {
-    matches!(
-        extension_with_dot(path).as_deref(),
-        Some(".json" | ".jsonc" | ".json5" | ".yaml" | ".yml" | ".toml")
-    )
-}
-
 fn extension_with_dot(path: &Path) -> Option<String> {
     path.extension()
         .and_then(|e| e.to_str())

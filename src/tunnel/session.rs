@@ -8,6 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
+/// Cloudflared resource for one run: id, creds dir, ingress. Not a log prefix.
 #[derive(Debug)]
 pub struct TunnelSession {
     pub config_dir: PathBuf,
@@ -16,9 +17,6 @@ pub struct TunnelSession {
     pub ingress: Vec<Ingress>,
     pub token: String,
     pub binary: String,
-    pub run_cwd: Option<String>,
-    pub run_name: String,
-    pub run_color: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -80,14 +78,6 @@ pub fn setup(
 
     write_config_yml(&config_dir, &tunnel_name, &tunnel_id, &ingress)?;
 
-    let opts = cfg.and_then(|c| c.command_options.as_ref());
-    let run_name = opts
-        .and_then(|o| o.name.clone())
-        .unwrap_or_else(|| "Tunnel".into());
-    let run_color = opts
-        .and_then(|o| o.prefix_color.clone())
-        .or_else(|| Some("cyan".into()));
-
     Ok(TunnelSession {
         config_dir,
         tunnel_name,
@@ -95,9 +85,6 @@ pub fn setup(
         ingress,
         token,
         binary,
-        run_cwd: opts.and_then(|o| o.cwd.clone()),
-        run_name,
-        run_color,
     })
 }
 
@@ -265,58 +252,11 @@ pub fn run_command_line(session: &TunnelSession) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tunnel::cloudflared::CloudflaredOps;
+    use crate::tunnel::cloudflared::{MockCloudflared, TunnelRow};
     use crate::tunnel::dns::RecordingDns;
     use crate::tunnel::Ingress;
     use std::sync::Mutex;
     use tempfile::tempdir;
-
-    #[derive(Default)]
-    struct MockCf {
-        has_cert: bool,
-        list: Mutex<Vec<TunnelRow>>,
-        created: Mutex<Vec<String>>,
-        deleted: Mutex<Vec<String>>,
-        routed: Mutex<Vec<(String, String)>>,
-        fail_list: bool,
-    }
-
-    impl CloudflaredOps for MockCf {
-        fn binary_path(&self) -> Result<String, Error> {
-            Ok("cloudflared".into())
-        }
-        fn has_cert(&self, _config_dir: &Path) -> bool {
-            self.has_cert
-        }
-        fn list_tunnels(&self) -> Result<Vec<TunnelRow>, Error> {
-            if self.fail_list {
-                return Err(Error::Cloudflared {
-                    message: "list failed".into(),
-                });
-            }
-            Ok(self.list.lock().unwrap().clone())
-        }
-        fn delete_tunnel(&self, id: &str) -> Result<(), Error> {
-            self.deleted.lock().unwrap().push(id.to_string());
-            self.list.lock().unwrap().retain(|r| r.id != id);
-            Ok(())
-        }
-        fn create_tunnel(&self, name: &str) -> Result<(), Error> {
-            self.created.lock().unwrap().push(name.to_string());
-            self.list.lock().unwrap().push(TunnelRow {
-                id: "new-id".into(),
-                name: name.to_string(),
-            });
-            Ok(())
-        }
-        fn route_dns(&self, tunnel_name: &str, hostname: &str) -> Result<(), Error> {
-            self.routed
-                .lock()
-                .unwrap()
-                .push((tunnel_name.to_string(), hostname.to_string()));
-            Ok(())
-        }
-    }
 
     fn ingress() -> Vec<Ingress> {
         vec![Ingress {
@@ -328,9 +268,9 @@ mod tests {
     #[test]
     fn setup_creates_and_routes() {
         let dir = tempdir().unwrap();
-        let cf = MockCf {
+        let cf = MockCloudflared {
             has_cert: true,
-            ..MockCf::default()
+            ..MockCloudflared::default()
         };
         let dns = RecordingDns::default();
         let rt = TunnelRuntime::from_parts(cf, dns);
@@ -350,13 +290,13 @@ mod tests {
     #[test]
     fn existing_tunnel_errors_without_remove_flag() {
         let dir = tempdir().unwrap();
-        let cf = MockCf {
+        let cf = MockCloudflared {
             has_cert: true,
             list: Mutex::new(vec![TunnelRow {
                 id: "old".into(),
                 name: "stackrun".into(),
             }]),
-            ..MockCf::default()
+            ..MockCloudflared::default()
         };
         let rt = TunnelRuntime::from_parts(cf, RecordingDns::default());
         let cfg = CfTunnelConfig {
@@ -371,9 +311,9 @@ mod tests {
     #[test]
     fn existing_dns_errors_without_remove_flag() {
         let dir = tempdir().unwrap();
-        let cf = MockCf {
+        let cf = MockCloudflared {
             has_cert: true,
-            ..MockCf::default()
+            ..MockCloudflared::default()
         };
         let dns = RecordingDns {
             record_id: Some("rec1".into()),
@@ -392,9 +332,9 @@ mod tests {
     #[test]
     fn missing_cert_errors() {
         let dir = tempdir().unwrap();
-        let cf = MockCf {
+        let cf = MockCloudflared {
             has_cert: false,
-            ..MockCf::default()
+            ..MockCloudflared::default()
         };
         let rt = TunnelRuntime::from_parts(cf, RecordingDns::default());
         let cfg = CfTunnelConfig {

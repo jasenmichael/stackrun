@@ -1,7 +1,7 @@
 //! Load every supported config format from checked-in fixtures and assert `--dry-run` JSON.
 
 use serde_json::Value;
-use stackrun::config::load::{format_dry_run, load_config, LoadOptions};
+use stackrun::config::{format_dry_run, load_config, LoadOptions};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 

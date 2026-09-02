@@ -1,4 +1,4 @@
-use stackrun::config::load::{load_config, LoadOptions};
+use stackrun::config::{load_config, LoadOptions};
 use std::fs;
 use std::process::Command;
 use tempfile::tempdir;

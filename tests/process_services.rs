@@ -1,13 +1,13 @@
-//! Concurrent dummy services plus before/after hooks via real `process::run`.
+//! Concurrent dummy services plus before/after hooks via real `stack::run`.
 //!
 //! Does not repeat token-abort, empty-ingress, env, or handleInput cases from
 //! `process_lifecycle.rs`. Overlap and sibling-kill are asserted with markers,
 //! not only exit codes.
 
 use stackrun::config::types::{
-    CommandEntry, CommandSpec, ConcurrentlyOptions, KillOthers, StackrunConfig,
+    CommandEntry, Command, ProcessOptions, KillOthers, StackrunConfig,
 };
-use stackrun::process;
+use stackrun::stack;
 use stackrun::Error;
 use std::fs;
 use std::path::Path;
@@ -17,10 +17,10 @@ use std::time::{Duration, Instant};
 use tempfile::tempdir;
 
 fn spec(name: &str, command: impl Into<String>) -> CommandEntry {
-    CommandEntry::Full(CommandSpec {
+    CommandEntry::Full(Command {
         command: command.into(),
         name: Some(name.into()),
-        ..CommandSpec::default()
+        ..Command::default()
     })
 }
 
@@ -53,7 +53,7 @@ fn run_with_timeout(
 ) -> Result<Result<u8, Error>, mpsc::RecvTimeoutError> {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let _ = tx.send(process::run(&config));
+        let _ = tx.send(stack::run(&config));
     });
     rx.recv_timeout(timeout)
 }
@@ -67,9 +67,9 @@ fn multiple_dummies_overlap_then_after_runs() {
     let after = dir.path().join("after");
 
     let config = StackrunConfig {
-        concurrently_options: Some(ConcurrentlyOptions {
+        process_options: Some(ProcessOptions {
             handle_input: Some(false),
-            ..ConcurrentlyOptions::default()
+            ..ProcessOptions::default()
         }),
         commands: Some(vec![
             spec("svc-a", hold_until_go(&start_a, &go)),
@@ -81,7 +81,7 @@ fn multiple_dummies_overlap_then_after_runs() {
 
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let _ = tx.send(process::run(&config));
+        let _ = tx.send(stack::run(&config));
     });
 
     assert!(
@@ -105,8 +105,8 @@ fn multiple_dummies_overlap_then_after_runs() {
 
     let code = rx
         .recv_timeout(Duration::from_secs(8))
-        .expect("process::run finished")
-        .expect("process::run");
+        .expect("stack::run finished")
+        .expect("stack::run");
     assert_eq!(code, 0);
     assert!(
         after.exists(),
@@ -127,9 +127,9 @@ fn before_commands_finish_before_any_dummy_starts() {
     let svc_b_early = dir.path().join("svc_b_early");
 
     let config = StackrunConfig {
-        concurrently_options: Some(ConcurrentlyOptions {
+        process_options: Some(ProcessOptions {
             handle_input: Some(false),
-            ..ConcurrentlyOptions::default()
+            ..ProcessOptions::default()
         }),
         before_commands: Some(vec![
             format!("touch {}", quoted(&before1)),
@@ -166,7 +166,7 @@ fn before_commands_finish_before_any_dummy_starts() {
         ..StackrunConfig::default()
     };
 
-    let code = process::run(&config).expect("run");
+    let code = stack::run(&config).expect("run");
     assert_eq!(code, 0);
     assert!(before1.exists());
     assert!(before2.exists());
@@ -193,9 +193,9 @@ fn failing_before_skips_dummy_services() {
     let svc_b = dir.path().join("svc_b");
 
     let config = StackrunConfig {
-        concurrently_options: Some(ConcurrentlyOptions {
+        process_options: Some(ProcessOptions {
             handle_input: Some(false),
-            ..ConcurrentlyOptions::default()
+            ..ProcessOptions::default()
         }),
         before_commands: Some(vec!["exit 2".into()]),
         commands: Some(vec![
@@ -205,7 +205,7 @@ fn failing_before_skips_dummy_services() {
         ..StackrunConfig::default()
     };
 
-    let err = process::run(&config).unwrap_err();
+    let err = stack::run(&config).unwrap_err();
     assert!(matches!(err, Error::BeforeCommandFailed { .. }));
     assert!(!svc_a.exists(), "svc-a must not spawn after before failure");
     assert!(!svc_b.exists(), "svc-b must not spawn after before failure");
@@ -220,10 +220,10 @@ fn failing_dummy_skips_after_and_kills_siblings() {
     let after = dir.path().join("after");
 
     let config = StackrunConfig {
-        concurrently_options: Some(ConcurrentlyOptions {
+        process_options: Some(ProcessOptions {
             kill_others: Some(KillOthers::One("failure".into())),
             handle_input: Some(false),
-            ..ConcurrentlyOptions::default()
+            ..ProcessOptions::default()
         }),
         after_commands: Some(vec![format!("touch {}", quoted(&after))]),
         commands: Some(vec![
@@ -247,8 +247,8 @@ fn failing_dummy_skips_after_and_kills_siblings() {
         ..StackrunConfig::default()
     };
 
-    let result = run_with_timeout(config, Duration::from_secs(8)).expect("process::run finished");
-    let code = result.expect("process::run");
+    let result = run_with_timeout(config, Duration::from_secs(8)).expect("stack::run finished");
+    let code = result.expect("stack::run");
     assert_ne!(code, 0);
     assert!(start_a.exists(), "holding dummy must have started");
     assert!(start_b.exists(), "failing dummy must have started");

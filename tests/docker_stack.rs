@@ -2,10 +2,11 @@
 //!
 //! Live tests skip when `docker` / `docker compose` is missing or `docker info` fails
 //! (no daemon). Spawn the `stackrun` binary with `cwd` = fixture dir so compose files
-//! resolve. `process::run` uses the process cwd for hooks; cargo test is parallel, so
+//! resolve. `stack::run` uses the process cwd for hooks; cargo test is parallel, so
 //! we do not `chdir`.
 //!
-//! Product today skips `afterCommands` when any concurrent command fails (no `finally`).
+//! Product skips `afterCommands` when any concurrent command fails (no `finally`).
+//! Ctrl+C is the other stop: every command dies, then `afterCommands` run.
 //! These fixtures still `down -v` on the success path. A [`ComposeCleanup`] guard also
 //! downs if the dummy fails or the test panics, so leftover containers do not linger.
 

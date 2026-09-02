@@ -32,20 +32,6 @@ pub fn defu(preferred: Value, fallback: Value) -> Value {
     }
 }
 
-pub fn defu_all<I>(values: I) -> Value
-where
-    I: IntoIterator<Item = Value>,
-{
-    let mut iter = values.into_iter();
-    let Some(mut acc) = iter.next() else {
-        return Value::Object(Map::new());
-    };
-    for next in iter {
-        acc = defu(acc, next);
-    }
-    acc
-}
-
 /// Apply c12 environment-specific overlays using `NODE_ENV` (`envName`).
 ///
 /// `config = defu({ ...$<env>, ...$env[env] }, config)`

@@ -14,8 +14,8 @@ It is not tied to a single application language. Commands are opaque argv/shell 
 
 | Surface | Path | Role |
 | --- | --- | --- |
-| CLI binary | `src/main.rs` | Parse CLI, load config, run process manager |
-| Library | `src/lib.rs` | Config, process, tunnel modules |
+| CLI binary | `src/main.rs` | Parse CLI, load config, run stack |
+| Library | `src/lib.rs` | Config, stack run, process, tunnel modules |
 
 Historical Node CLI (citty) is on `main` only.
 
@@ -54,7 +54,7 @@ No `STACKRUN_*` prefix exists in the Node CLI.
 3. `c12.loadConfig({ name: "stack", configFile: configPath, cwd: process.cwd(), dotenv: true })`.
 4. If `--tunnel` or `process.env.TUNNEL === "true"`: `config.tunnelEnabled = true`.
 5. If `config` is missing: error, exit 1.
-6. **Rust:** If `--dry-run`: print a pretty JSON envelope `{ configFile, config }` (effective `StackrunConfig` after overlays and run-time defaults; `cfTunnelConfig.cfToken` redacted to `"[redacted]"` when present). Exit 0. Do not spawn children or set up tunnels. Missing-config and parse errors still exit 1.
+6. **Rust:** If `--dry-run`: print a pretty JSON envelope `{ configFile, config }` (effective `StackrunConfig` after overlays and load defaults; `cfTunnelConfig.cfToken` redacted to `"[redacted]"` when present). Exit 0. Do not spawn children or set up tunnels. Missing-config and parse errors still exit 1.
 7. If `existsSync(configFile)`: log path, `await stackrun(config)`, exit 0.
 8. Else: error `No valid configuration found at ${configPath}`, exit 1.
 
@@ -115,7 +115,7 @@ defu semantics: objects deep-merge; arrays concatenate and de-duplicate; primiti
 
 ```ts
 {
-  concurrentlyOptions?: ConcurrentlyOptions; // concurrently API
+  concurrentlyOptions?: ProcessOptions; // on-disk name; Rust type ProcessOptions
   tunnelEnabled?: boolean;                   // default false
   cfTunnelConfig?: { ... };                  // see tunnel section
   beforeCommands?: string[];                 // default []
@@ -145,7 +145,7 @@ Each item is concurrently `Command` plus:
 
 When tunneling: `env = { ...env, ...tunnelEnv }`. When not: `env` only.
 
-### Concurrently defaults applied in `stackrun()`
+### Concurrently defaults applied at load
 
 Using `||`, so falsy user values are replaced:
 
@@ -165,11 +165,11 @@ Other concurrently options (`cwd`, `maxProcesses`, `raw`, `restartTries`, `resta
 3. `beforeCommands`: sequential shell, stdio inherit. Failure aborts.
 4. If tunneling: create named tunnel (`cloudflared tunnel create`), route DNS, write `config.yml`, then spawn `cloudflared tunnel run` as a sibling process with prefix `[Tunnel]` (or `commandOptions.name`, e.g. bugpin `[tunnel]`).
 5. Spawn user commands concurrently (`sh -c` / `cmd /c`). `tunnelEnv` overlays `env` when tunneling is on. `handleInput: true` inherits stdin; `false` uses null stdin. Child stdout/stderr lines are prefixed `[name]<space>` (name already sliced to `prefixLength`). `prefixColor` / `prefixColors: auto` color only `[name]`; the line body is uncolored. `prefixColors: false` prints `[name]` with no ANSI. Stderr lines still go to stderr.
-6. `afterCommands`: sequential shell. **Skipped if any concurrent command failed** (no `finally`).
+6. `afterCommands`: sequential shell. **Skipped if any concurrent command failed** (no `finally`). **Ctrl+C** stops every command (Unix process groups), then `afterCommands` still run.
 7. If a tunnel session was started: delete tunnel, DNS, local creds/`config.yml` (cf-tunnel cleanup), even on failure.
 8. Log “Stackrun completed”.
 
-Unix: each child is a process group; SIGINT kills groups. `maxProcesses`, restart, `ipc`, `raw`, and other concurrently keys are accepted in config and **not wired**.
+Unix: each child is a process group; SIGINT kills every group, then `afterCommands` run. `maxProcesses`, restart, `ipc`, `raw`, and other concurrently keys are accepted in config and **not wired**.
 
 ## Cloudflare tunnel (Rust)
 
@@ -201,7 +201,7 @@ These are required by the refactor goals, not Node bugs:
 2. **Native formats work without Node.** JSON, JSONC, JSON5, YAML, TOML, `.env`, and `.stackrc` load in Rust.
 3. **`--command <shell>`** is a new CLI override: build a one-entry `commands` list and do not require a config file. Needed so `stackrun --command "python server.py"` works without Node.
 4. **`--json` is implemented** as a CLI overlay (Node declares it but never reads it).
-5. **Process manager is native**, not the `concurrently` npm package. Wired: concurrent spawn, names, `[name]` prefixes (color on the bracket token only, including `prefixColors: auto`), `handleInput`, env/`tunnelEnv`, cwd, before/after, kill-others-on-failure, SIGINT process-group cleanup. Other concurrently keys deserialize and are ignored.
+5. **Stack run is native**, not the `concurrently` npm package. `stack` owns before/after and tunnel session; `process` owns concurrent spawn, names, `[name]` prefixes (color on the bracket token only, including `prefixColors: auto`), `handleInput`, env/`tunnelEnv`, cwd, kill-others-on-failure, SIGINT process-group cleanup. Ctrl+C stops every command, then `afterCommands` run. Other concurrently keys deserialize and are ignored.
 6. **Tunnel manager is independent.** Uses `cloudflared` CLI + Cloudflare DNS HTTP API. Does not embed Node or call `cf-tunnel`. Abort on missing token/ingress is a non-zero error instead of Node’s silent `return`.
 7. **This branch is Rust-only.** Node application sources are not present; refer to `main` for the old implementation.
 8. **Explicit `handleInput: false` is honored.** Node’s `value || true` treated `false` as unset.
