@@ -68,14 +68,14 @@ detect_target() {
       elif command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; then
         libc=musl
       fi
+      if [ "$libc" = musl ]; then
+        die "no published linux-musl binary; use a glibc host or build from source"
+      fi
       case "$arch" in
         x86_64|amd64)
-          echo "x86_64-unknown-linux-${libc}"
+          echo "x86_64-unknown-linux-gnu"
           ;;
         aarch64|arm64)
-          if [ "$libc" = musl ]; then
-            die "no published linux-arm64-musl binary; use linux-arm64-gnu or build from source"
-          fi
           echo "aarch64-unknown-linux-gnu"
           ;;
         *)
@@ -91,7 +91,10 @@ detect_target() {
       esac
       ;;
     MINGW*|MSYS*|CYGWIN*)
-      die "Windows: download the zip from ${GITHUB}/${REPO}/releases (x86_64-pc-windows-msvc)"
+      case "$arch" in
+        aarch64|arm64) echo "aarch64-pc-windows-msvc" ;;
+        *) echo "x86_64-pc-windows-msvc" ;;
+      esac
       ;;
     *)
       die "unsupported OS: $os. See ${GITHUB}/${REPO}/releases"
@@ -129,7 +132,14 @@ verify_checksum() {
 
 target=$(detect_target)
 version=$(resolve_version)
-archive="stackrun-v${version}-${target}.tar.gz"
+ext=tar.gz
+case "$target" in
+  *-windows-*)
+    ext=zip
+    BIN_NAME=stackrun.exe
+    ;;
+esac
+archive="stackrun-v${version}-${target}.${ext}"
 asset_url="${GITHUB}/${REPO}/releases/download/v${version}/${archive}"
 sums_url="${GITHUB}/${REPO}/releases/download/v${version}/SHA256SUMS"
 
@@ -143,7 +153,6 @@ if [ "$DRY_RUN" -eq 1 ]; then
 fi
 
 need_cmd curl
-need_cmd tar
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -154,7 +163,13 @@ curl -fsSL -o "${tmp}/SHA256SUMS" "$sums_url" || die "download failed: $sums_url
 (
   cd "$tmp"
   verify_checksum "$archive" SHA256SUMS
-  tar -xzf "$archive"
+  if [ "$ext" = zip ]; then
+    command -v unzip >/dev/null 2>&1 || die "need unzip for Windows zip"
+    unzip -o "$archive"
+  else
+    need_cmd tar
+    tar -xzf "$archive"
+  fi
 )
 
 extracted=$(find "$tmp" -type f -name "$BIN_NAME" | head -n 1)

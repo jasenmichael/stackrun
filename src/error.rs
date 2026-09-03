@@ -48,12 +48,26 @@ pub enum Error {
     NoTunnelIngress,
 
     #[error(
-        "`cloudflared` was not found on PATH. Install it from https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/ then retry."
+        "cloudflared is required for tunnels and was not found on PATH.\n\
+         \n\
+         Install (pick one), then retry:\n\
+           macOS:   brew install cloudflared\n\
+           Windows: winget install Cloudflare.cloudflared\n\
+           Linux:   https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/\n\
+         \n\
+         Quick tunnels (tunnel.local only) need the binary only.\n\
+         Named tunnels (tunnel.public set) also need: cloudflared tunnel login"
     )]
     CloudflaredMissing,
 
     #[error(
-        "cloudflared is not logged in (missing cert.pem in {dir}). Run `cloudflared tunnel login` once, then retry."
+        "cloudflared is installed but not logged in (no cert.pem in {dir}).\n\
+         \n\
+         Named tunnels need a one-time login:\n\
+           cloudflared tunnel login\n\
+         \n\
+         Pick the zone that will hold the public hostname. Then retry.\n\
+         Quick tunnels (omit public) do not need login."
     )]
     CloudflaredLoginRequired { dir: String },
 

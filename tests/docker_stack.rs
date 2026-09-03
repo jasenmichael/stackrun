@@ -5,8 +5,7 @@
 //! resolve. `stack::run` uses the process cwd for hooks; cargo test is parallel, so
 //! we do not `chdir`.
 //!
-//! Product skips `after` when any concurrent command fails (no `finally`).
-//! Ctrl+C is the other stop: every command dies, then `after` run.
+//! `after` always runs once commands have exited (ok, fail, or Ctrl+C).
 //! These fixtures still `down -v` on the success path. A [`ComposeCleanup`] guard also
 //! downs if the dummy fails or the test panics, so leftover containers do not linger.
 

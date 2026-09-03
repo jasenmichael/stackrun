@@ -91,7 +91,7 @@ fn before_command_failure_skips_main() {
 }
 
 #[test]
-fn after_commands_skipped_on_failure() {
+fn after_commands_run_on_failure() {
     let dir = tempdir().unwrap();
     let marker = dir.path().join("after");
     let config = StackrunConfig {
@@ -109,7 +109,7 @@ fn after_commands_skipped_on_failure() {
     };
     let code = stack::run(&config).expect("run");
     assert_eq!(code, 7);
-    assert!(!marker.exists());
+    assert!(marker.exists(), "after must run when a command fails");
 }
 
 #[test]

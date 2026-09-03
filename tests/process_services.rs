@@ -210,7 +210,7 @@ fn failing_before_skips_dummy_services() {
 }
 
 #[test]
-fn failing_dummy_skips_after_and_kills_siblings() {
+fn failing_dummy_runs_after_and_kills_siblings() {
     let dir = tempdir().unwrap();
     let start_a = dir.path().join("start_a");
     let start_b = dir.path().join("start_b");
@@ -254,8 +254,5 @@ fn failing_dummy_skips_after_and_kills_siblings() {
         !survived.exists(),
         "killOthers: failure must kill the holding sibling before it finishes"
     );
-    assert!(
-        !after.exists(),
-        "afterCommands must not run when a dummy exits non-zero"
-    );
+    assert!(after.exists(), "after must run when a dummy exits non-zero");
 }

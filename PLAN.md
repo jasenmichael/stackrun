@@ -1,6 +1,6 @@
 # PLAN.md — Stackrun engineering
 
-**Crate location:** repo root (`Cargo.toml` + `src/`). npm shim: `npm/stackrun`.
+**Crate location:** repo root (`Cargo.toml` + `src/`). npm shim: `npm`.
 
 ## Phase status
 
@@ -14,7 +14,7 @@
 | 6 | Tunnel manager | Done — per-command quick or named `cloudflared` siblings; no API token / REST DNS |
 | 7 | CLI | clap: `--config`, `--json`, `--tunnel`, `--command`, `--dry-run`, `--jiti` |
 | 8 | Tests | Native config, process lifecycle, mocked tunnel setup, optional JS/TS, CLI flags + config formats via `--dry-run` |
-| 9 | Packaging | In progress — npm wrapper + guarded GitHub Actions release |
+| 9 | Packaging | Done — one npm `stackrun` (download GH binary); native six-target release; Pages from README |
 
 ## Architecture
 
@@ -27,7 +27,7 @@ src/
 ├── stack        before, per-command tunnel siblings, concurrent commands, after, cleanup
 ├── process      spawn, prefix, signals, kill-others (children only)
 └── tunnel       named create/route/run + quick `--url` (cloudflared CLI only)
-npm/stackrun     bin shim + stackrun() / defineStackrunConfig (spawn native binary)
+npm              bin shim + stackrun() / defineStackrunConfig (spawn native binary)
 ```
 
 `StackrunConfig` is canonical and serde-based. Only SPEC keys deserialize. Process and tunnel never import c12/jiti.
@@ -88,17 +88,17 @@ See `STACK.md`. Short why:
 - Truncate names to `prefixLength` (default 10).
 - Honor explicit `handleInput: false`.
 - `--tunnel` with no `tunnel.local` aborts before hooks.
-- Skip `after` on process-group failure. Ctrl+C stops every command, then `after` runs.
+- `after` always runs once commands have exited. Ctrl+C stops every command, then `after` runs, then exit 0 unless a command already failed.
 - Prefix-log every child including each cloudflared.
 
 ## Packaging (Phase 9)
 
-- Cross-compiled binaries on merge to `main` (GitHub Actions).
-- npm `stackrun` meta package: `bin` + `import { stackrun }` (spawn native binary).
-- Platform optionalDependencies under `@jasenmichael/stackrun-<os>-<arch>`.
-- Publish jobs stay guarded until a version-bump PR is merged. No laptop `npm publish` / `cargo publish`.
-- Dynamic docs: automd + changelogen in the release PR.
-- GitHub Pages on the `docs` branch at publish: `scripts/generate-pages.sh` writes `install.sh` + landing HTML. Curl install: `https://jasenmichael.github.io/stackrun/install.sh`.
+- Native binaries on merge to `main` (six targets; no musl, no `cross`).
+- One npm package `stackrun`: `bin` + `import { stackrun }`. Install downloads the matching GitHub Release binary. No `@jasenmichael/stackrun-*` packages.
+- Publish from `release.yml` when the crate version is newer than the last tag. No laptop `npm publish` / `cargo publish`.
+- Dynamic docs: automd + changelogen in the release PR (no tag from the laptop).
+- GitHub Pages on every `main` merge: `scripts/generate-pages.sh` renders README to `index.html` and copies `install.sh` + demo assets. Curl install: `https://jasenmichael.github.io/stackrun/install.sh`.
+- Post-1.0 ideas: [ROADMAP.md](ROADMAP.md).
 
 ## Verification
 

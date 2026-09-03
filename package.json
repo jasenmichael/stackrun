@@ -12,8 +12,8 @@
     "docs": "automd",
     "changelog": "changelogen --bump",
     "release": "changelogen --release --no-publish",
-    "test:npm": "node --test npm/stackrun/test/*.test.js",
-    "pack:npm": "npm pack ./npm/stackrun",
+    "test:npm": "node --test npm/test/*.test.js",
+    "pack:npm": "npm pack ./npm",
     "pages": "scripts/generate-pages.sh"
   },
   "devDependencies": {

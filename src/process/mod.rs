@@ -1,12 +1,11 @@
 use crate::config::types::{Command, ProcessOptions};
 use crate::error::Error;
-use owo_colors::OwoColorize;
+use crate::logging;
 use std::io::{BufRead, BufReader};
 use std::process::{Command as StdCommand, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use tracing::info;
 
 /// Concurrent children to spawn: prefixed output, kill-others, SIGINT.
 pub struct ConcurrentRun {
@@ -101,6 +100,7 @@ fn spawn_one(
         }
     };
     let color = conc_opts.resolve_prefix_color(spec.color.as_deref(), index);
+    let host_color = logging::host_color_enabled(Some(conc_opts));
     let failed = Arc::clone(failed);
     let shutting_down = Arc::clone(shutting_down);
     let children = Arc::clone(children);
@@ -109,6 +109,7 @@ fn spawn_one(
             name,
             spec,
             color,
+            host_color,
             children,
             failed,
             shutting_down,
@@ -155,6 +156,7 @@ fn run_command(
     name: String,
     spec: Command,
     color: Option<String>,
+    host_color: bool,
     children: Arc<Mutex<Vec<ChildHandle>>>,
     failed: Arc<AtomicBool>,
     shutting_down: Arc<AtomicBool>,
@@ -220,16 +222,24 @@ fn run_command(
     }
 
     let code = status.code().unwrap_or(1) as u8;
-    info!(
-        "Command {name} {}",
-        command_finish_word(status.code(), shutting_down.load(Ordering::SeqCst))
+    let shutting = shutting_down.load(Ordering::SeqCst);
+    logging::emit_opt(
+        format!(
+            "Command {name} {}",
+            command_finish_word(status.code(), shutting)
+        ),
+        host_color,
     );
 
-    if code != 0 && !shutting_down.load(Ordering::SeqCst) {
-        failed.store(true, Ordering::SeqCst);
+    if shutting {
+        return Ok(0);
+    }
+    if code != 0 {
+        let first_failure = !failed.swap(true, Ordering::SeqCst);
         if kill_on_failure {
             kill_all(&children);
         }
+        return Ok(if first_failure { code } else { 0 });
     }
 
     Ok(code)
@@ -261,21 +271,8 @@ fn prefix_pipe<R: std::io::Read>(pipe: R, name: &str, color: Option<&str>, is_er
 
 /// Concurrently-style line: colored `[name]` then a space then the uncolored rest.
 fn format_prefixed_line(name: &str, line: &str, color: Option<&str>) -> String {
-    let prefix = colorize(&format!("[{name}]"), color);
+    let prefix = logging::colorize(&format!("[{name}]"), color);
     format!("{prefix} {line}")
-}
-
-fn colorize(text: &str, color: Option<&str>) -> String {
-    match color.map(|c| c.to_ascii_lowercase()) {
-        Some(c) if c == "red" => text.red().to_string(),
-        Some(c) if c == "green" => text.green().to_string(),
-        Some(c) if c == "yellow" => text.yellow().to_string(),
-        Some(c) if c == "blue" => text.blue().to_string(),
-        Some(c) if c == "magenta" => text.magenta().to_string(),
-        Some(c) if c == "cyan" => text.cyan().to_string(),
-        Some(c) if c == "white" => text.white().to_string(),
-        _ => text.to_string(),
-    }
 }
 
 fn shell_command(command: &str) -> StdCommand {

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="420" viewBox="0 0 880 420" role="img" aria-label="stackrun demo: docker before, api and web, quick tunnel, after on Ctrl+C">
+  <rect width="880" height="420" rx="12" fill="#161513"/>
+  <rect x="12" y="12" width="856" height="396" rx="8" fill="#1e1b18"/>
+  <circle cx="36" cy="36" r="6" fill="#ff5f56"/>
+  <circle cx="56" cy="36" r="6" fill="#ffbd2e"/>
+  <circle cx="76" cy="36" r="6" fill="#27c93f"/>
+  <text x="110" y="40" fill="#9a968f" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">stackrun</text>
+  <text x="28" y="78" fill="#e8e6e3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">
+    <tspan x="28" dy="0" fill="#3dd68c">$ </tspan><tspan fill="#e8e6e3">stackrun</tspan>
+    <tspan x="28" dy="22" fill="#9a968f">Loaded config: ./stack.config.yaml</tspan>
+    <tspan x="28" dy="22" fill="#9a968f">Tunneling is enabled</tspan>
+    <tspan x="28" dy="22"><tspan fill="#7eb8da">[before]</tspan> docker compose up -d db</tspan>
+    <tspan x="28" dy="22"><tspan fill="#7eb8da">[before]</tspan> Container db  Started</tspan>
+    <tspan x="28" dy="22"><tspan fill="#3dd68c">[api]</tspan> ready on http://127.0.0.1:4000</tspan>
+    <tspan x="28" dy="22"><tspan fill="#6ea8fe">[web]</tspan> Local:   http://127.0.0.1:3000</tspan>
+    <tspan x="28" dy="22"><tspan fill="#7eb8da">[Tunnel]</tspan> Your quick Tunnel has been created!</tspan>
+    <tspan x="28" dy="22"><tspan fill="#7eb8da">[Tunnel]</tspan> https://random-words-here.trycloudflare.com</tspan>
+    <tspan x="28" dy="22" fill="#e8e6e3">^C</tspan>
+    <tspan x="28" dy="22"><tspan fill="#e3b341">[web]</tspan> stopped</tspan>
+    <tspan x="28" dy="22"><tspan fill="#e3b341">[api]</tspan> stopped</tspan>
+    <tspan x="28" dy="22"><tspan fill="#7eb8da">[after]</tspan> docker compose down db</tspan>
+    <tspan x="28" dy="22"><tspan fill="#7eb8da">[after]</tspan> Container db  Stopped</tspan>
+    <tspan x="28" dy="22" fill="#9a968f">Stackrun completed</tspan>
+    <tspan x="28" dy="22" fill="#3dd68c">$ </tspan>
+  </text>
+</svg>

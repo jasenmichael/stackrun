@@ -1,9 +1,0 @@
-{
-  "name": "@jasenmichael/stackrun-win32-x64-msvc",
-  "version": "1.0.0",
-  "description": "stackrun native binary for Windows x64",
-  "license": "MIT",
-  "os": ["win32"],
-  "cpu": ["x64"],
-  "files": ["stackrun.exe"]
-}

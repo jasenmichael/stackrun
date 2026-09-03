@@ -4,9 +4,9 @@
 
 use crate::config::types::{Command, StackrunConfig};
 use crate::error::Error;
+use crate::logging;
 use crate::process::{self, ConcurrentRun};
 use crate::tunnel::{self, TunnelRuntime, TunnelSession};
-use tracing::info;
 
 /// Run the stack with the real tunnel backend.
 pub fn run(config: &StackrunConfig) -> Result<u8, Error> {
@@ -19,9 +19,10 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
     let cmds = config.runnable_commands();
     let has_local = cmds.iter().any(|c| c.tunnel_local().is_some());
 
+    let host_color = logging::host_color_enabled(config.process.as_ref());
+
     if tunnel_on {
-        info!("Tunneling is enabled");
-        eprintln!("Tunneling is enabled");
+        logging::emit_opt("Tunneling is enabled", host_color);
         if !has_local {
             return Err(Error::NoTunnelIngress);
         }
@@ -35,23 +36,23 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
             });
         }
     } else {
-        info!("Tunneling is disabled");
-        eprintln!("Tunneling is disabled");
+        logging::emit_opt("Tunneling is disabled", host_color);
         if has_local {
-            let msg = "Config has tunnel.local. Pass --tunnel or set TUNNEL=true, or omit tunnel: false, to start cloudflared siblings";
-            info!("{msg}");
-            eprintln!("{msg}");
+            logging::emit_opt(
+                "Config has tunnel.local. Pass --tunnel or set TUNNEL=true, or omit tunnel: false, to start cloudflared siblings",
+                host_color,
+            );
         }
     }
 
     let exec_env: Vec<(String, String)> = std::env::vars().collect();
 
     if config.before_commands().is_empty() {
-        info!("No before hooks to run");
+        logging::emit_opt("No before hooks to run", host_color);
     } else {
-        info!("Running before hooks");
+        logging::emit_opt("Running before hooks", host_color);
         for command in config.before_commands() {
-            info!("Running before hook: {command}");
+            logging::emit_opt(format!("Running before hook: {command}"), host_color);
             process::run_hook(command, &exec_env, true)?;
         }
     }
@@ -65,12 +66,6 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
             specs.push(cmd.clone());
             match setup_sibling(&runtime, cmd, &defaults) {
                 Ok(Some((sibling, session))) => {
-                    eprintln!(
-                        "Starting tunnel sibling [{}] for {} at {}",
-                        sibling.name.as_deref().unwrap_or("Tunnel"),
-                        cmd.name.as_deref().unwrap_or("command"),
-                        cmd.tunnel_local().unwrap_or(""),
-                    );
                     specs.push(sibling);
                     if let Some(sess) = session {
                         sessions.push(sess);
@@ -86,11 +81,18 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
             }
         }
     } else {
-        specs.extend(cmds);
+        specs.extend(cmds.iter().cloned());
     }
 
     if specs.is_empty() {
         return Err(Error::NoCommands);
+    }
+
+    for cmd in &cmds {
+        logging::emit_opt(command_start_line(cmd), host_color);
+        if tunnel_on && cmd.tunnel_local().is_some() {
+            logging::emit_opt(tunnel_start_line(cmd, &defaults), host_color);
+        }
     }
 
     let outcome = match process::run_concurrent(ConcurrentRun {
@@ -111,24 +113,16 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
         tunnel::cleanup(&runtime, sess);
     }
 
-    // Ctrl+C stops every concurrent command, then `after` still runs.
-    // A failed command (no interrupt) still skips `after`.
+    // after always runs once commands have exited (ok, fail, or Ctrl+C).
+    // Empty / omitted after is a no-op and does not change the exit code.
     if config.after_commands().is_empty() {
-        info!("No after hooks to run");
-    } else if outcome.interrupted || outcome.worst_code == 0 {
-        info!("Running after hooks");
+        logging::emit_opt("No after hooks to run", host_color);
+    } else {
+        logging::emit_opt("Running after hooks", host_color);
         for command in config.after_commands() {
-            info!("Running after hook: {command}");
+            logging::emit_opt(format!("Running after hook: {command}"), host_color);
             process::run_hook(command, &exec_env, false)?;
         }
-    }
-
-    if outcome.interrupted {
-        return Ok(if outcome.worst_code == 0 {
-            1
-        } else {
-            outcome.worst_code
-        });
     }
 
     Ok(outcome.worst_code)
@@ -172,10 +166,44 @@ fn setup_sibling(
     }
 }
 
+/// Human start line for a user command (stderr, not prefixed child output).
+fn command_start_line(cmd: &Command) -> String {
+    let name = cmd
+        .name
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("command");
+    match cmd.cwd.as_deref().filter(|s| !s.is_empty()) {
+        Some(cwd) => format!("Starting [{name}] {} in {cwd}", cmd.run),
+        None => format!("Starting [{name}] {}", cmd.run),
+    }
+}
+
+/// Human start line for a cloudflared sibling. Named tunnels include `public`.
+/// Quick tunnels mention `*.trycloudflare.com` without parsing child stdout.
+fn tunnel_start_line(cmd: &Command, defaults: &crate::config::types::TunnelDefaults) -> String {
+    let sibling = cmd.sibling_prefix(defaults);
+    let name = cmd
+        .name
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("command");
+    let local = cmd.tunnel_local().unwrap_or("");
+    match cmd.tunnel_public() {
+        Some(public) => format!(
+            "Starting tunnel sibling [{sibling}] for {name} at {local} ({public})"
+        ),
+        None => format!(
+            "Starting tunnel sibling [{sibling}] for {name} at {local} (public host is a new *.trycloudflare.com)"
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::types::CommandTunnel;
+    use crate::logging;
 
     #[test]
     fn named_sibling_defaults_prefix_not_command_name() {
@@ -224,6 +252,75 @@ mod tests {
         assert_eq!(
             cmd.named_tunnel_name_with(&defaults).as_deref(),
             Some("bugpin")
+        );
+    }
+
+    #[test]
+    fn command_start_line_name_run_and_optional_cwd() {
+        let cmd = Command {
+            run: "nuxt dev --port 3001 --host".into(),
+            name: Some("nuxt".into()),
+            ..Command::default()
+        };
+        assert_eq!(
+            logging::format_host_line(&command_start_line(&cmd), false),
+            "[stackrun] Starting [nuxt] nuxt dev --port 3001 --host"
+        );
+        let with_cwd = Command {
+            cwd: Some("apps/web".into()),
+            ..cmd
+        };
+        assert_eq!(
+            logging::format_host_line(&command_start_line(&with_cwd), false),
+            "[stackrun] Starting [nuxt] nuxt dev --port 3001 --host in apps/web"
+        );
+        let unnamed = Command {
+            run: "echo hi".into(),
+            ..Command::default()
+        };
+        assert_eq!(
+            logging::format_host_line(&command_start_line(&unnamed), false),
+            "[stackrun] Starting [command] echo hi"
+        );
+    }
+
+    #[test]
+    fn tunnel_start_line_named_includes_public() {
+        let defaults = crate::config::types::TunnelDefaults {
+            prefix: Some("tunnel".into()),
+            ..crate::config::types::TunnelDefaults::default()
+        };
+        let cmd = Command {
+            run: "nuxt dev --port 3001 --host".into(),
+            name: Some("nuxt".into()),
+            tunnel: Some(CommandTunnel {
+                local: Some("http://localhost:3001".into()),
+                public: Some("https://app.example.dev".into()),
+                ..CommandTunnel::default()
+            }),
+            ..Command::default()
+        };
+        assert_eq!(
+            logging::format_host_line(&tunnel_start_line(&cmd, &defaults), false),
+            "[stackrun] Starting tunnel sibling [tunnel] for nuxt at http://localhost:3001 (https://app.example.dev)"
+        );
+    }
+
+    #[test]
+    fn tunnel_start_line_quick_mentions_trycloudflare() {
+        let defaults = crate::config::types::TunnelDefaults::default();
+        let cmd = Command {
+            run: "echo".into(),
+            name: Some("web".into()),
+            tunnel: Some(CommandTunnel {
+                local: Some("http://127.0.0.1:3000".into()),
+                ..CommandTunnel::default()
+            }),
+            ..Command::default()
+        };
+        assert_eq!(
+            logging::format_host_line(&tunnel_start_line(&cmd, &defaults), false),
+            "[stackrun] Starting tunnel sibling [Tunnel] for web at http://127.0.0.1:3000 (public host is a new *.trycloudflare.com)"
         );
     }
 }

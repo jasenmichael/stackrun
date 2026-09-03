@@ -314,6 +314,38 @@ fn dry_run_does_not_spawn_hooks_or_commands() {
 }
 
 #[test]
+fn host_prefix_on_lifecycle_lines() {
+    let dir = tempdir().unwrap();
+    let output = run_in(
+        dir.path(),
+        &[
+            "--json",
+            r#"{"process":{"colors":false},"commands":[{"name":"echo","run":"echo hi"}]}"#,
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("[stackrun] Running stackrun without a config file"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("[stackrun] Tunneling is disabled"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("[stackrun] Starting [echo] echo hi"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("[stackrun] Stackrun completed"), "{stderr}");
+    assert!(!stderr.contains(" INFO "), "no tracing INFO dump: {stderr}");
+}
+
+#[test]
 fn dry_run_omits_process_env_secrets() {
     let output = run_in_with_env(
         &flags_root(),

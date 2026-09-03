@@ -77,7 +77,9 @@ test("resolveBinary uses STACKRUN_BINARY", () => {
 
 test("resolveBinary throws when missing", () => {
   delete process.env.STACKRUN_BINARY;
+  process.env.STACKRUN_SKIP_DOWNLOAD = "1";
   assert.throws(() => resolveBinary(), { code: "STACKRUN_BINARY_MISSING" });
+  delete process.env.STACKRUN_SKIP_DOWNLOAD;
 });
 
 test("platformKey is a non-empty string", () => {

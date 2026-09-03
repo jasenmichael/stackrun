@@ -5,19 +5,17 @@
 <!-- automd:badges license -->
 <!-- /automd -->
 
-Process-orchestration CLI. Run one or more OS commands at the same time, with prefixed logs, lifecycle hooks, and optional Cloudflare tunnels.
+stackrun is a process-orchestration CLI. It is an alternative to running a local stack with [concurrently](https://www.npmjs.com/package/concurrently), [npm-run-all2](https://www.npmjs.com/package/npm-run-all2), [Wireit](https://github.com/google/wireit), or native shell operators (`&`, `wait`, `&&`).
 
-Commands are opaque processes. Python, Node, Go, shell, or any executable works. Stackrun does not interpret your app language.
+Those tools stay inside npm scripts or a single shell. stackrun is a standalone binary: any language, prefixed logs, `before` / `after` hooks, and optional Cloudflare tunnels.
 
-It is a standalone Rust binary. Node evaluates JS/TS config files and, in the npm package, shims `stackrun` / `import { stackrun }`.
-
-Use it when a local stack is several processes you would otherwise start in separate terminals.
+Commands are opaque processes. Python, Node, Go, shell, or any executable works. Node evaluates JS/TS config files and, in the npm package, shims `stackrun` / `import { stackrun }`.
 
 ## Features
 
 - One config file for a local stack
-- Concurrent processes with `[name]` prefixes (color on the name only)
-- Ctrl+C stops every command, then runs `after`
+- Concurrent processes with `[name]` prefixes (color on the name only); stackrun-owned lines use `[stackrun]` the same way
+- Ctrl+C stops every command, then runs `after`, then exits 0 unless a command already failed
 - JSON, JSONC, JSON5, YAML, TOML, `.env`, and `.stackrc`
 - Optional JS/TS config (`node` plus local `jiti`, or `--jiti npx`)
 - Lifecycle hooks (`before` / `after`)
@@ -30,11 +28,23 @@ Use it when a local stack is several processes you would otherwise start in sepa
 
 Unix is the primary platform. On SIGINT, Stackrun stops each child process group. Windows uses `cmd /c` without that extra group handling.
 
-Tunneling needs [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/) on PATH.
+`cloudflared` is needed **only for tunnels**. No `tunnel` key, or `tunnel: false`, means stackrun does not look for it.
 
-Named tunnels also need `cloudflared tunnel login` once (`cert.pem`). Quick tunnels need the binary only. No API token.
+Install when you use tunnels:
+
+```sh
+# macOS
+brew install cloudflared
+# Windows
+winget install Cloudflare.cloudflared
+# Linux: see Cloudflare's install page
+```
+
+Quick tunnels (`tunnel.local` only) need the binary. Named tunnels (`public` set) also need one login: `cloudflared tunnel login`. No API token.
 
 Node is needed only for the npm package (`npx`, `npm i`, or `import { stackrun }`) or for JS/TS config files. See [JS/TS config](#jsts-config). YAML, TOML, and JSON need no Node.
+
+A Rust toolchain is needed only when [building from source](#from-source).
 
 ## Installation
 
@@ -57,7 +67,7 @@ The script and landing page live on GitHub Pages (`docs` branch): https://jasenm
 
 Manual install: pick an archive from [GitHub Releases](https://github.com/jasenmichael/stackrun/releases). Names are `stackrun-v<version>-<target>.tar.gz` (Unix) or `.zip` (Windows).
 
-Targets: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-musl`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`.
+Targets: Linux x64/arm64 (`*-unknown-linux-gnu`), macOS Intel/Apple Silicon (`*-apple-darwin`), Windows x64/arm64 (`*-pc-windows-msvc`).
 
 Extract `stackrun` (or `stackrun.exe`) onto your `PATH`. Windows has no curl script; use the zip.
 
@@ -78,7 +88,7 @@ cargo install stackrun
 
 ### npm
 
-Needs Node. Use `npx` with no install, a global install, or a per-project install. See [Programmatic API](#programmatic-api) for `import { stackrun }`.
+Needs Node. One npm package (`stackrun`). Install downloads the matching GitHub Release binary for this OS/arch. See [Programmatic API](#programmatic-api) for `import { stackrun }`.
 
 ```sh
 npx stackrun
@@ -119,30 +129,56 @@ cargo build --release
 ## Quick start
 
 ```sh
-# Discover stack.config.* in the current directory
 stackrun
-
-# Explicit YAML
 stackrun --config ./stack.config.yaml
-
-# One-off command (no config file)
 stackrun --command "python server.py"
 ```
 
-Minimal YAML:
+One stack: start a Docker DB, run api + web, expose web, tear the DB down.
+
+**Quick tunnel** (no `public`). URL is a new `https://<id>.trycloudflare.com` each run, in the `[Tunnel]` log. Needs `cloudflared`. No login.
 
 ```yaml
 # stack.config.yaml
+before:
+  # Sequential. Inherited stdio. A failed hook aborts — no commands, no tunnels.
+  - docker compose up -d db
+after:
+  # Always runs after commands have exited (ok, fail, or Ctrl+C). Not skipped on failure.
+  # Use this to tear down docker / temp files. A failed after hook still fails the run.
+  - docker compose down db
 commands:
   - name: api
-    run: python server.py
+    run: npm run dev
     cwd: ./api
+    color: green
   - name: web
     run: npm run dev
     cwd: ./web
+    color: blue
+    tunnel:
+      local: http://127.0.0.1:3000
 ```
 
-Put that file in the project root and run `stackrun`.
+![stackrun demo](scripts/pages/demo.svg)
+
+[Play this recording](https://jasenmichael.github.io/stackrun/#demo) on the docs site.
+
+**Named tunnel** (add `public`). URL is exactly that hostname. Needs `cloudflared tunnel login` and the name on your zone.
+
+```yaml
+    tunnel:
+      local: http://127.0.0.1:3000
+      public: https://web.example.dev
+```
+
+- Omit `public` → quick → new `*.trycloudflare.com` each run.
+- Set `public` → named → URL is `public`.
+- No `tunnel` key → no cloudflared, no public URL.
+
+`killOthers: failure` (default) kills siblings when one command exits non-zero. It does not control `after`. `after` always runs once commands have exited, unless `before` failed or the run never started.
+
+Put the file in the project root and run `stackrun`.
 
 ## Programmatic API
 
@@ -174,9 +210,9 @@ If tunneling is on, Stackrun checks for `cloudflared` (and `cert.pem` for named 
 
 Every command then starts at once. Each child, including each `cloudflared`, prints as `[name] line`. Color applies to the name token only.
 
-If one command fails, the rest are killed (`killOthers: failure`). Ctrl+C stops every process group on Unix.
+If one command fails, siblings are killed (`killOthers: failure`). Ctrl+C stops every process group on Unix and is a stop, not a failure (exit 0 unless a command already failed).
 
-`after` hooks run when every command exits 0, or after Ctrl+C. They are skipped if a command failed.
+`after` always runs once commands have exited (ok, fail, or Ctrl+C), unless `before` failed or the run never started.
 
 Named tunnels are deleted on exit. DNS CNAMEs are left in place.
 
@@ -276,7 +312,7 @@ Top-level keys:
 | --- | --- | --- | --- |
 | `commands` | array | `[]` | Required to run, unless `--command` or `--json` supplies them |
 | `before` | string array | `[]` | Sequential hooks before services. Failure aborts the run. |
-| `after` | string array | `[]` | Sequential hooks after all commands stop. Skipped if a command fails. Still run after Ctrl+C. |
+| `after` | string array | `[]` | Sequential hooks after commands have exited (ok, fail, or Ctrl+C). Empty/omitted is a no-op. |
 | `process` | object | see below | Process-manager options. |
 | `tunnel` | `false` or object | auto | `false` disables. Object is named-tunnel defaults (`removeExisting`). Omitted + any `tunnel.local` enables. |
 
@@ -299,9 +335,9 @@ A command may also be a bare string: `commands: ["echo hello"]`.
 
 String arrays. Each item runs sequentially in a shell with inherited stdio.
 
-`before` failure aborts. `after` runs when every concurrent command exits 0, or after Ctrl+C has stopped every command.
+`before` failure aborts — no commands, no `after`. Empty/omitted `before` / `after` is a no-op (no error).
 
-They are skipped if a command fails (`killOthers: failure` kills the rest first).
+`after` always runs once commands have exited (ok, fail, or Ctrl+C). `killOthers` only kills siblings. A failed `after` hook still fails the run.
 
 ### `process`
 
@@ -343,7 +379,7 @@ Cleanup deletes the tunnel and local creds. It does not delete the CNAME. A left
 
 `--tunnel` / `TUNNEL=true` force tunnels on. `tunnel: false` at stack level runs commands without `cloudflared` and without `tunnel.env`.
 
-`--tunnel` with zero `local` exits 1 before hooks. If tunneling is on and `cloudflared` is missing, Stackrun exits before hooks.
+`--tunnel` with zero `local` exits 1 before hooks. If tunneling is on and `cloudflared` is missing (or named tunnels lack `cert.pem`), stackrun exits before hooks and prints install + login steps.
 
 ## Environment variables
 
@@ -357,62 +393,7 @@ Cleanup deletes the tunnel and local creds. It does not delete the CNAME. A left
 
 ## Examples
 
-### Two services
-
-```yaml
-# stack.config.yaml
-commands:
-  - name: api
-    run: python -m http.server 4000
-    cwd: ./api
-    color: green
-  - name: web
-    run: npm run dev
-    cwd: ./web
-    color: blue
-```
-
-```sh
-stackrun --config ./stack.config.yaml
-```
-
-### Lifecycle hooks
-
-```yaml
-before:
-  - docker compose -f docker-compose.dev.yml up -d db
-after:
-  - docker compose -f docker-compose.dev.yml down db
-commands:
-  - name: api
-    run: npm run dev
-    cwd: ./api
-```
-
-### Tunnel config
-
-Needs `cloudflared` on PATH. Named hostnames must be on a zone in the account you selected with `cloudflared tunnel login`.
-
-```yaml
-tunnel:
-  removeExisting: true
-  prefix: Tunnel   # [Tunnel] on cloudflared lines
-  color: cyan
-commands:
-  - name: api
-    run: python3 -m http.server 4000 --bind 127.0.0.1
-    color: green
-    tunnel:
-      local: http://127.0.0.1:4000
-      public: https://api.example.dev
-      resource: api-cf              # Cloudflare object name
-      env: { PUBLIC_API: https://api.example.dev }
-  - name: web
-    run: python3 -m http.server 3000 --bind 127.0.0.1
-    color: blue
-    tunnel:
-      local: http://127.0.0.1:3000   # quick: *.trycloudflare.com
-```
+The [Quick start](#quick-start) YAML is the main example (docker `before` / `after`, api + web, web tunnel without `public` then with `public`).
 
 ### JS/TS config
 
@@ -437,7 +418,7 @@ stackrun --config ./stack.config.ts --jiti npx
 
 ## Development
 
-Requires a Rust stable toolchain.
+Clone and build as in [From source](#from-source).
 
 ```sh
 cargo test
@@ -445,7 +426,7 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 ```
 
-Behavior: [SPEC.md](SPEC.md). Tools: [STACK.md](STACK.md). Output: [DESIGN.md](DESIGN.md). Plan: [PLAN.md](PLAN.md).
+Behavior: [SPEC.md](SPEC.md). Tools: [STACK.md](STACK.md). Output: [DESIGN.md](DESIGN.md). Plan: [PLAN.md](PLAN.md). Later: [ROADMAP.md](ROADMAP.md).
 
 Checked-in fixtures live next to the integration tests: `tests/config_formats/`, `tests/cli_flags/`, and `tests/docker_stack/`.
 
@@ -458,6 +439,7 @@ Issues and pull requests are welcome.
 - Format with `rustfmt` (`cargo fmt`)
 - Keep `cargo clippy --all-targets -- -D warnings` clean
 - Add or update tests for behavior changes (`cargo test`)
+- Later work lives in [ROADMAP.md](ROADMAP.md). Update SPEC/DESIGN before implementing an item.
 
 ## License
 

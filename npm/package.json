@@ -27,13 +27,8 @@
     "index.js",
     "index.d.ts"
   ],
-  "optionalDependencies": {
-    "@jasenmichael/stackrun-linux-x64-gnu": "1.0.0",
-    "@jasenmichael/stackrun-linux-arm64-gnu": "1.0.0",
-    "@jasenmichael/stackrun-linux-x64-musl": "1.0.0",
-    "@jasenmichael/stackrun-darwin-x64": "1.0.0",
-    "@jasenmichael/stackrun-darwin-arm64": "1.0.0",
-    "@jasenmichael/stackrun-win32-x64-msvc": "1.0.0"
+  "scripts": {
+    "postinstall": "node lib/postinstall.js"
   },
   "engines": {
     "node": ">=18"

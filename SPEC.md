@@ -14,8 +14,8 @@ It is not tied to a single application language. Commands are opaque argv/shell 
 | --- | --- | --- |
 | CLI binary | `src/main.rs` | Parse CLI, load config, run stack |
 | Library | `src/lib.rs` | Config, stack run, process, tunnel modules |
-| npm `stackrun()` | `npm/stackrun` | Spawn the native binary (`--json` when a config object is passed) |
-| npm `defineStackrunConfig` | `npm/stackrun` | Identity helper + types for JS/TS configs |
+| npm `stackrun()` | `npm` | Spawn the native binary (`--json` when a config object is passed) |
+| npm `defineStackrunConfig` | `npm` | Identity helper + types for JS/TS configs |
 
 ## CLI
 
@@ -50,7 +50,7 @@ It is not tied to a single application language. Commands are opaque argv/shell 
 4. If `--tunnel` or `TUNNEL=true`: force tunnels on.
 5. If `--command` or `--json` is set, a config file is optional. Otherwise a resolved file is required.
 6. If `--dry-run`: print a pretty JSON envelope `{ configFile, config }` (effective `StackrunConfig` after overlays and load defaults). Exit 0. Do not spawn children or set up tunnels. Missing-config and parse errors still exit 1.
-7. If a config file was used: log its path, run the stack, exit 0.
+7. If a config file was used: print `[stackrun] Running stackrun with the loaded config: {path}`, run the stack, print `[stackrun] Stackrun completed`, exit 0. No file: print `[stackrun] Running stackrun without a config file` before the run. These are host lines (stderr), not `tracing`.
 8. If no file and no `--command` / `--json`: error `No valid configuration found at ${configPath}`, exit 1.
 
 ## Configuration
@@ -128,7 +128,7 @@ Only these keys load. Unknown keys are ignored.
 | Field | Type | Notes |
 | --- | --- | --- |
 | `run` | string | Required to run. Entries without a string `run` are **filtered out**. |
-| `name` | string | Log prefix. Truncated to `process.prefixLength` (default 10), then printed as `[name]` (color on that token only). |
+| `name` | string | Child log prefix. Truncated to `process.prefixLength` (default 10), then printed as `[name]` (color on that token only). Stackrun-owned lines use `[stackrun]`, not this field. |
 | `cwd` | string | Per-command working directory |
 | `env` | `Record<string, string \| boolean \| undefined>` | Base env |
 | `color` | string | Prefix color |
@@ -160,16 +160,17 @@ When tunneling is on: `env = { ...env, ...tunnel.env }`. When not: command `env`
 ## Process lifecycle
 
 1. If tunneling is on (`--tunnel` / `TUNNEL=true`, omitted `tunnel` when any command has `tunnel.local`, or `tunnel: true` / defaults object): require at least one `tunnel.local` and `cloudflared` on PATH. Explicit `tunnel: false` skips every sibling. `--tunnel` with zero `local` **aborts before hooks**.
-2. Print “Tunneling is enabled/disabled” (always, not only `tracing`). If tunneling is off and any command has `tunnel.local`, also print that `--tunnel` / `TUNNEL=true` / omitting `tunnel: false` starts siblings.
+2. Print `[stackrun] Tunneling is enabled/disabled` (always, not only `tracing`). If tunneling is off and any command has `tunnel.local`, also print that `--tunnel` / `TUNNEL=true` / omitting `tunnel: false` starts siblings.
 3. `before`: sequential shell, stdio inherit. Failure aborts.
 4. For each command with `tunnel.local`:
    - **Quick** (no `public`): spawn `{cloudflared} tunnel --url {local}` as a prefixed sibling. No login, no create, no DNS.
    - **Named** (`public` set): require `cert.pem`; `tunnel create` + `route dns` [+ `--overwrite-dns` when `removeExisting`] + spawn `{cloudflared} tunnel run --url {local} {resource}`. Resource: command `tunnel.resource`, else stack `tunnel.resource`, else `command.name`.
-   - Sibling `[name]` / color: command `tunnel.prefix` / `tunnel.color`, else stack defaults, else `Tunnel` + `cyan`. Do not copy the user command’s name or color. Print when each sibling starts.
-5. Spawn user commands concurrently (`sh -c` / `cmd /c`). `tunnel.env` overlays `env` when tunneling is on. `handleInput: true` inherits stdin; `false` uses null stdin. Child stdout/stderr lines are prefixed `[name]<space>` (name already sliced to `prefixLength`). `color` / `colors: auto` color only `[name]`; the line body is uncolored. `colors: false` prints `[name]` with no ANSI. Stderr lines still go to stderr. Every child including each cloudflared is prefix-logged. Do not wait-parse trycloudflare URLs.
-6. `after`: sequential shell. **Skipped if any concurrent command failed** (no `finally`). **Ctrl+C** stops every command (Unix process groups), then `after` still runs.
+   - Sibling `[name]` / color: command `tunnel.prefix` / `tunnel.color`, else stack defaults, else `Tunnel` + `cyan`. Do not copy the user command’s name or color.
+   - After setup succeeds, print one host start line per user command (`[stackrun] Starting [name] {run}` plus ` in {cwd}` when `cwd` is set) and one per tunnel sibling (`[stackrun] Starting tunnel sibling [prefix] …`). Named: include `local` and `public`. Quick: include `local` and that the public host is a new `*.trycloudflare.com` (do not parse or wait on cloudflared stdout).
+5. Spawn user commands concurrently (`sh -c` / `cmd /c`). `tunnel.env` overlays `env` when tunneling is on. `handleInput: true` inherits stdin; `false` uses null stdin. Child stdout/stderr lines are prefixed `[name]<space>` (name already sliced to `prefixLength`). `color` / `colors: auto` color only `[name]`; the line body is uncolored. `colors: false` prints `[name]` with no ANSI. Stderr lines still go to stderr. Every child including each cloudflared is prefix-logged. Do not wait-parse trycloudflare URLs. Stackrun-owned sentences (config loaded, tunneling on/off, hooks, start lines, command exited/stopped/errored, completed, errors) use `[stackrun]<space>` the same way: color only the `stackrun` name (letter-rainbow); body uncolored.
+6. `after`: sequential shell. **Always runs** after commands have exited (success, failure, or Ctrl+C), if any `after` entries were set. Empty / omitted `after` is a no-op and does not change the exit code. **Ctrl+C** stops every command (Unix process groups), then `after` runs, then the process exits **0** unless a command had already failed on its own.
 7. Cleanup named sessions only: `cloudflared tunnel delete -f` + local credential JSON. **Do not delete the CNAME** (leftover hostname shows Cloudflare `1016`). Quick tunnels have no account resource.
-8. Log “Stackrun completed”.
+8. Print `[stackrun] Stackrun completed`.
 
 Unix: each child is a process group; SIGINT kills every group, then `after` runs.
 
@@ -210,7 +211,7 @@ The `stackrun` npm package is a bin shim plus a small JS API. It does **not** ru
 2. **JSON, JSONC, JSON5, YAML, TOML, `.env`, and `.stackrc` load in Rust.** JS/TS need `node` plus local `jiti` or `--jiti npx`.
 3. **`--command <shell>`** builds a one-entry `commands` list and does not require a config file.
 4. **`--json` is a CLI overlay** (highest data priority).
-5. **`stack` owns before/after and per-command tunnel siblings.** `process` owns concurrent spawn, names, `[name]` prefixes (color on the bracket token only, including `colors: auto`), `handleInput`, env/`tunnel.env`, cwd, kill-others-on-failure, SIGINT process-group cleanup. Ctrl+C stops every command, then `after` runs.
+5. **`stack` owns before/after and per-command tunnel siblings.** `process` owns concurrent spawn, names, `[name]` prefixes (color on the bracket token only, including `colors: auto`), `handleInput`, env/`tunnel.env`, cwd, kill-others-on-failure, SIGINT process-group cleanup. Ctrl+C stops every command, then `after` runs, then exit 0 unless a command already failed. Stackrun-owned stderr uses `[stackrun]` (rainbow on the `stackrun` letters; body uncolored). Default tracing is `warn`; lifecycle sentences are not `info!`.
 6. **Tunnel manager uses `cloudflared` CLI only** (create / route dns / run / delete). No API token and no REST DNS. Quick tunnels need the binary only. Named tunnels need `cert.pem` from `cloudflared tunnel login`.
 7. **Explicit `handleInput: false` is honored.**
 8. **Every child is prefix-logged**, including each cloudflared. Do not wait-parse trycloudflare URLs.

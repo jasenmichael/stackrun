@@ -28,6 +28,10 @@ jobs:
       - run: npm run test:npm
         env:
           STACKRUN_BINARY: ${{ github.workspace }}/target/debug/stackrun
+          STACKRUN_SKIP_DOWNLOAD: "1"
+      - run: bash -n scripts/install.sh && bash -n scripts/generate-pages.sh
+      - run: scripts/generate-pages.sh 1.0.0 /tmp/stackrun-pages
+      - run: test -f /tmp/stackrun-pages/index.html && test -f /tmp/stackrun-pages/install.sh
 
   version-changed:
     needs: test
@@ -52,10 +56,36 @@ jobs:
           fi
           echo "crate=$version last_tag=${last:-none}"
 
-  # Guard: flip to `if: needs.version-changed.outputs.should_publish == 'true'`
-  # in the first release PR. Until then this job never runs.
+  pages:
+    needs: [test, version-changed]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - name: Generate Pages
+        run: ./scripts/generate-pages.sh "${{ needs.version-changed.outputs.version }}" site
+      - name: Push docs branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${{ needs.version-changed.outputs.version }}"
+          origin="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          work=$(mktemp -d)
+          git -C "$work" init
+          git -C "$work" checkout -b docs
+          cp -a site/. "$work/"
+          git -C "$work" config user.name "github-actions[bot]"
+          git -C "$work" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$work" add -A
+          git -C "$work" commit -m "docs: GitHub Pages for v${version}"
+          git -C "$work" push --force "$origin" docs
+
   publish:
-    if: false
+    if: needs.version-changed.outputs.should_publish == 'true'
     needs: [test, version-changed]
     runs-on: ${{ matrix.os }}
     strategy:
@@ -66,19 +96,19 @@ jobs:
             os: ubuntu-latest
             archive: tar.gz
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            archive: tar.gz
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
+            os: ubuntu-24.04-arm
             archive: tar.gz
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-13
             archive: tar.gz
           - target: aarch64-apple-darwin
             os: macos-latest
             archive: tar.gz
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+            archive: zip
+          - target: aarch64-pc-windows-msvc
+            os: windows-11-arm
             archive: zip
     steps:
       - uses: actions/checkout@v4
@@ -109,9 +139,8 @@ jobs:
           name: stackrun-${{ matrix.target }}
           path: stackrun-v${{ needs.version-changed.outputs.version }}-${{ matrix.target }}.*
 
-  # Guard: same as publish. Enable in the first release PR.
   ship:
-    if: false
+    if: needs.version-changed.outputs.should_publish == 'true'
     needs: [test, version-changed, publish]
     runs-on: ubuntu-latest
     steps:
@@ -139,25 +168,12 @@ jobs:
           set -euo pipefail
           version="${{ needs.version-changed.outputs.version }}"
           npm ci
-          npx changelogen gh release "$version"
+          if [ -f CHANGELOG.md ]; then
+            npx changelogen gh release "$version" || gh release create "v${version}" --title "v${version}" --notes "stackrun ${version}"
+          else
+            gh release create "v${version}" --title "v${version}" --notes "stackrun ${version}"
+          fi
           gh release upload "v${version}" SHA256SUMS dist/**/*.{tar.gz,zip} --clobber
-      - name: GitHub Pages
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          version="${{ needs.version-changed.outputs.version }}"
-          ./scripts/generate-pages.sh "$version" site
-          origin="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          work=$(mktemp -d)
-          git -C "$work" init
-          git -C "$work" checkout -b docs
-          cp -a site/. "$work/"
-          git -C "$work" config user.name "github-actions[bot]"
-          git -C "$work" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C "$work" add -A
-          git -C "$work" commit -m "docs: GitHub Pages for v${version}"
-          git -C "$work" push --force "$origin" docs
       - name: crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -167,5 +183,4 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          echo "Enable this job in the first release PR. Package platform binaries then npm publish."
-          exit 1
+          npm publish ./npm --access public

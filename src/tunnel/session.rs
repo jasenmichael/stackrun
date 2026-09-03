@@ -67,7 +67,7 @@ pub fn setup_named(
 }
 
 pub fn cleanup(runtime: &TunnelRuntime, session: &TunnelSession) {
-    info!("Cleaning up named tunnel {}", session.tunnel_name);
+    info!("Cleaning up named tunnel: {}", session.tunnel_name);
     if let Err(err) = delete_named_tunnel(
         runtime.cloudflared.as_ref(),
         &session.config_dir,

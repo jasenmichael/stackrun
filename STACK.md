@@ -24,7 +24,7 @@ stackrun (Rust)
 | `src/main.rs` | CLI entry |
 | `src/lib.rs` | Config load, stack run, process, tunnel (Jiti bridge is crate-private) |
 | `tests/` | Integration tests |
-| `npm/stackrun` | npm bin + `stackrun()` / `defineStackrunConfig` (spawn native binary) |
+| `npm` | npm bin + `stackrun()` / `defineStackrunConfig` (spawn native binary) |
 | `scripts/install.sh` | Curl installer (copied to GitHub Pages at publish) |
 | `scripts/generate-pages.sh` | Builds `site/` for the `docs` branch |
 
@@ -82,10 +82,9 @@ Jiti is **not** a Rust crate. It is a Node helper used only for this path.
 
 ### Packaging
 
-- Native binaries: linux gnu/musl, macOS, Windows x64 (GitHub Actions on merge to `main`).
-- npm `stackrun`: `bin` wrapper + `import { stackrun, defineStackrunConfig }` (spawn the native binary, `--json` for a config object).
-- Platform packages: `@jasenmichael/stackrun-<os>-<arch>` as `optionalDependencies`.
-- Publish (GH Release, crates.io, npm) only from release.yml after tests pass and the crate version is newer than the last tag. Publish jobs stay guarded until the first release PR.
+- Native binaries: Linux gnu x64/arm64, macOS Intel/Apple Silicon, Windows x64/arm64. Built on native GitHub runners on merge to `main`. No musl, no scoped platform npm packages.
+- npm `stackrun` (one package, always `jasenmichael/stackrun`): `bin` wrapper + `import { stackrun, defineStackrunConfig }`. `postinstall` downloads the matching GitHub Release binary for this OS/arch into `~/.cache/stackrun/<version>/`. Override with `STACKRUN_BINARY`.
+- Publish (GH Release, crates.io, npm `stackrun`) only from `release.yml` after tests pass and the crate version is newer than the last tag.
 - Docs generators: automd (README), changelogen (CHANGELOG / GitHub Release notes). Run those in the release PR, not from a laptop publish.
-- GitHub Pages: publish job generates `site/` (`install.sh` + landing `index.html` + README) and force-pushes the `docs` branch. Repo Pages source should be `docs` / root → https://jasenmichael.github.io/stackrun/
+- GitHub Pages: every merge to `main` generates `site/` from README (`scripts/generate-pages.sh`) and force-pushes the `docs` branch (`install.sh`, `index.html`, `demo.cast`, `demo.svg`). Repo Pages source should be `docs` / root → https://jasenmichael.github.io/stackrun/
 - Curl install: `curl -fsSL https://jasenmichael.github.io/stackrun/install.sh | sh` (source: `scripts/install.sh`).

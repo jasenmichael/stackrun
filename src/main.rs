@@ -5,15 +5,13 @@ use stackrun::config::{load_config, LoadOptions};
 use stackrun::logging;
 use stackrun::stack;
 use std::process::ExitCode;
-use tracing::{error, info};
 
 fn main() -> ExitCode {
     logging::init();
     match run() {
         Ok(code) => ExitCode::from(code),
         Err(err) => {
-            error!("{err:#}");
-            eprintln!("{err:#}");
+            logging::emit(format!("{err:#}"));
             ExitCode::from(1)
         }
     }
@@ -35,16 +33,20 @@ fn run() -> anyhow::Result<u8> {
         return Ok(0);
     }
 
+    let color = logging::host_color_enabled(loaded.config.process.as_ref());
     if let Some(path) = &loaded.config_file {
-        info!(
-            "Running stackrun with the loaded config: {}",
-            path.display()
+        logging::emit_opt(
+            format!(
+                "Running stackrun with the loaded config: {}",
+                path.display()
+            ),
+            color,
         );
     } else {
-        info!("Running stackrun without a config file");
+        logging::emit_opt("Running stackrun without a config file", color);
     }
 
     let code = stack::run(&loaded.config)?;
-    info!("Stackrun completed");
+    logging::emit_opt("Stackrun completed", color);
     Ok(code)
 }

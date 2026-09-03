@@ -2,7 +2,7 @@
 //!
 //! Matches README “Two services”: stackrun starts more than one command at once.
 //! `killOthers: failure` (load default) kills siblings; SIGINT stops every
-//! command, then `after` hooks run. A failed command still skips `after`.
+//! command, then `after` hooks run. A failed command still runs `after`.
 
 use stackrun::config::{load_config, LoadOptions};
 use stackrun::stack;
@@ -178,10 +178,7 @@ fn two_http_servers_serve_then_kill_others_on_failure() {
     assert_ne!(code, 0, "fail sibling must make the run non-zero");
     assert!(wait_down(api, Duration::from_secs(5)), "api still up");
     assert!(wait_down(web, Duration::from_secs(5)), "web still up");
-    assert!(
-        !after.exists(),
-        "after hooks must skip when a command fails (killOthers: failure)"
-    );
+    assert!(after.exists(), "after hooks must run when a command fails");
 }
 
 #[test]
@@ -225,7 +222,8 @@ fn two_http_servers_serve_then_sigint_stops_groups() {
     assert!(kill.success(), "kill -INT {pid}");
 
     let status = wait_child(&mut child, Duration::from_secs(10));
-    assert!(status, "stackrun did not exit after SIGINT");
+    let code = status.expect("stackrun did not exit after SIGINT");
+    assert_eq!(code, 0, "Ctrl+C on a healthy stack exits 0");
     assert!(wait_down(api, Duration::from_secs(5)), "api still up");
     assert!(wait_down(web, Duration::from_secs(5)), "web still up");
     assert!(
@@ -234,16 +232,16 @@ fn two_http_servers_serve_then_sigint_stops_groups() {
     );
 }
 
-fn wait_child(child: &mut std::process::Child, timeout: Duration) -> bool {
+fn wait_child(child: &mut std::process::Child, timeout: Duration) -> Option<i32> {
     let start = Instant::now();
     while start.elapsed() < timeout {
         match child.try_wait() {
-            Ok(Some(_)) => return true,
+            Ok(Some(status)) => return status.code().or(Some(0)),
             Ok(None) => thread::sleep(Duration::from_millis(50)),
-            Err(_) => return false,
+            Err(_) => return None,
         }
     }
     let _ = child.kill();
     let _ = child.wait();
-    false
+    None
 }
