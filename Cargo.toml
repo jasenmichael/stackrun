@@ -1,11 +1,18 @@
 [package]
 name = "stackrun"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
+rust-version = "1.74"
 license = "MIT"
+authors = ["Jasen Michael"]
 repository = "https://github.com/jasenmichael/stackrun"
+homepage = "https://github.com/jasenmichael/stackrun"
+documentation = "https://github.com/jasenmichael/stackrun#readme"
 description = "Run multiple services with optional Cloudflare tunneling"
 readme = "README.md"
+keywords = ["cli", "process", "concurrent", "cloudflare", "tunnel"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = ["graphify-out/", "site/", "scripts/pages/"]
 
 [[bin]]
 name = "stackrun"

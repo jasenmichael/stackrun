@@ -111,19 +111,18 @@ mod tests {
 
     #[test]
     fn unflattens_and_parses_json_values() {
-        let v = parse_rc("tunnelEnabled=true\ncfTunnelConfig.tunnelName=dev\n");
+        let v = parse_rc("tunnel.resource=dev\n");
         assert_eq!(
             v,
             json!({
-                "tunnelEnabled": true,
-                "cfTunnelConfig": { "tunnelName": "dev" }
+                "tunnel": { "resource": "dev" }
             })
         );
     }
 
     #[test]
     fn array_suffix() {
-        let v = parse_rc("beforeCommands[]=echo a\nbeforeCommands[]=echo b\n");
-        assert_eq!(v["beforeCommands"], json!(["echo a", "echo b"]));
+        let v = parse_rc("before[]=echo a\nbefore[]=echo b\n");
+        assert_eq!(v["before"], json!(["echo a", "echo b"]));
     }
 }

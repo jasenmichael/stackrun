@@ -1,0 +1,171 @@
+name: release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - run: cargo build
+      - run: npm ci
+      - run: npm run test:npm
+        env:
+          STACKRUN_BINARY: ${{ github.workspace }}/target/debug/stackrun
+
+  version-changed:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      should_publish: ${{ steps.check.outputs.should_publish }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          last=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ -z "$last" ] || [ "$version" != "$last" ]; then
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "crate=$version last_tag=${last:-none}"
+
+  # Guard: flip to `if: needs.version-changed.outputs.should_publish == 'true'`
+  # in the first release PR. Until then this job never runs.
+  publish:
+    if: false
+    needs: [test, version-changed]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            archive: tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.version-changed.outputs.version }}"
+          bin=stackrun
+          if [ "${{ matrix.archive }}" = "zip" ]; then bin=stackrun.exe; fi
+          src="target/${{ matrix.target }}/release/${bin}"
+          dest="stackrun-v${version}-${{ matrix.target }}"
+          mkdir -p "$dest"
+          cp "$src" "$dest/"
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            7z a "${dest}.zip" "$dest"
+          else
+            tar -czf "${dest}.tar.gz" "$dest"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stackrun-${{ matrix.target }}
+          path: stackrun-v${{ needs.version-changed.outputs.version }}-${{ matrix.target }}.*
+
+  # Guard: same as publish. Enable in the first release PR.
+  ship:
+    if: false
+    needs: [test, version-changed, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: https://registry.npmjs.org
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          : > SHA256SUMS
+          while IFS= read -r -d '' f; do
+            (cd "$(dirname "$f")" && sha256sum "$(basename "$f")") >> SHA256SUMS
+          done < <(find dist -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print0 | sort -z)
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${{ needs.version-changed.outputs.version }}"
+          npm ci
+          npx changelogen gh release "$version"
+          gh release upload "v${version}" SHA256SUMS dist/**/*.{tar.gz,zip} --clobber
+      - name: GitHub Pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${{ needs.version-changed.outputs.version }}"
+          ./scripts/generate-pages.sh "$version" site
+          origin="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          work=$(mktemp -d)
+          git -C "$work" init
+          git -C "$work" checkout -b docs
+          cp -a site/. "$work/"
+          git -C "$work" config user.name "github-actions[bot]"
+          git -C "$work" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$work" add -A
+          git -C "$work" commit -m "docs: GitHub Pages for v${version}"
+          git -C "$work" push --force "$origin" docs
+      - name: crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked
+      - name: npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "Enable this job in the first release PR. Package platform binaries then npm publish."
+          exit 1

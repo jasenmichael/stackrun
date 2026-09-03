@@ -24,7 +24,9 @@ stackrun (Rust)
 | `src/main.rs` | CLI entry |
 | `src/lib.rs` | Config load, stack run, process, tunnel (Jiti bridge is crate-private) |
 | `tests/` | Integration tests |
-| `src/` on `main` | Historical Node implementation (not on this branch) |
+| `npm/stackrun` | npm bin + `stackrun()` / `defineStackrunConfig` (spawn native binary) |
+| `scripts/install.sh` | Curl installer (copied to GitHub Pages at publish) |
+| `scripts/generate-pages.sh` | Builds `site/` for the `docs` branch |
 
 Single crate at the repo root. Split into a workspace later only if modules need independent versioning.
 
@@ -78,7 +80,12 @@ Jiti is **not** a Rust crate. It is a Node helper used only for this path.
 - **CI:** GitHub Actions, `cargo fmt` / clippy / test.
 - **Toolchain:** `rust-toolchain.toml` pins `stable`.
 
-### Packaging (later)
+### Packaging
 
-- Native binaries (`x86_64` / `aarch64`, linux / macos / windows).
-- Optional thin npm `bin` wrapper that execs the native binary (Phase 9). Not required for the Rust CLI itself.
+- Native binaries: linux gnu/musl, macOS, Windows x64 (GitHub Actions on merge to `main`).
+- npm `stackrun`: `bin` wrapper + `import { stackrun, defineStackrunConfig }` (spawn the native binary, `--json` for a config object).
+- Platform packages: `@jasenmichael/stackrun-<os>-<arch>` as `optionalDependencies`.
+- Publish (GH Release, crates.io, npm) only from release.yml after tests pass and the crate version is newer than the last tag. Publish jobs stay guarded until the first release PR.
+- Docs generators: automd (README), changelogen (CHANGELOG / GitHub Release notes). Run those in the release PR, not from a laptop publish.
+- GitHub Pages: publish job generates `site/` (`install.sh` + landing `index.html` + README) and force-pushes the `docs` branch. Repo Pages source should be `docs` / root → https://jasenmichael.github.io/stackrun/
+- Curl install: `curl -fsSL https://jasenmichael.github.io/stackrun/install.sh | sh` (source: `scripts/install.sh`).

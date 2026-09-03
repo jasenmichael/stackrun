@@ -1,0 +1,23 @@
+{
+  "name": "stackrun-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Workspace scripts for the stackrun npm package and UnJS doc generators.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jasenmichael/stackrun.git"
+  },
+  "license": "MIT",
+  "scripts": {
+    "docs": "automd",
+    "changelog": "changelogen --bump",
+    "release": "changelogen --release --no-publish",
+    "test:npm": "node --test npm/stackrun/test/*.test.js",
+    "pack:npm": "npm pack ./npm/stackrun",
+    "pages": "scripts/generate-pages.sh"
+  },
+  "devDependencies": {
+    "automd": "^0.4.2",
+    "changelogen": "^0.6.2"
+  }
+}

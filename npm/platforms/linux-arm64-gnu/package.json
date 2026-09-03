@@ -1,0 +1,10 @@
+{
+  "name": "@jasenmichael/stackrun-linux-arm64-gnu",
+  "version": "1.0.0",
+  "description": "stackrun native binary for linux arm64 gnu",
+  "license": "MIT",
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "libc": ["glibc"],
+  "files": ["stackrun"]
+}

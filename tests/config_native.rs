@@ -91,7 +91,7 @@ fn rc_file_merges_under_main() {
     .unwrap();
     fs::write(
         dir.path().join(".stackrc"),
-        "tunnelEnabled=false\nbeforeCommands[]=echo rc\n",
+        "tunnel=false\nbefore[]=echo rc\n",
     )
     .unwrap();
     let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
@@ -222,26 +222,25 @@ fn config_dir_stack_yaml() {
 }
 
 #[test]
-fn bugpin_legacy_shape_maps_namable_tunnel() {
+fn spec_tunnel_shape_maps_namable_tunnel() {
     let dir = tempdir().unwrap();
     fs::write(
         dir.path().join("stack.config.yaml"),
         r#"
-concurrentlyOptions:
+process:
   killOthers: failure
-cfTunnelConfig:
-  tunnelName: bugpin
-  removeExistingTunnel: true
-  removeExistingDns: true
-  commandOptions:
-    name: tunnel
-    prefixColor: cyan
+tunnel:
+  resource: bugpin
+  removeExisting: true
+  prefix: tunnel
+  color: cyan
 commands:
   - name: nuxt
-    command: echo nuxt
-    prefixColor: green
-    url: http://localhost:3000
-    tunnelUrl: https://bugpin.example.dev
+    run: echo nuxt
+    color: green
+    tunnel:
+      local: http://localhost:3000
+      public: https://bugpin.example.dev
 "#,
     )
     .unwrap();
@@ -276,7 +275,7 @@ fn rc_beats_extends_when_main_omits_key() {
         "extends: ./base.yaml\ncommands:\n  - run: echo main\n",
     )
     .unwrap();
-    fs::write(dir.path().join(".stackrc"), "tunnelEnabled=true\n").unwrap();
+    fs::write(dir.path().join(".stackrc"), "tunnel=true\n").unwrap();
     let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
     assert!(
         loaded.config.tunnel_enabled(),

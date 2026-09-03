@@ -125,7 +125,7 @@ struct ChildHandle {
     child_id: u32,
 }
 
-/// Sequential shell hook (beforeCommands / afterCommands). Stdio inherit.
+/// Sequential shell hook (`before` / `after`). Stdio inherit.
 pub fn run_hook(command: &str, env: &[(String, String)], before: bool) -> Result<(), Error> {
     let mut cmd = shell_command(command);
     for (k, v) in env {

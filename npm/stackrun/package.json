@@ -1,0 +1,41 @@
+{
+  "name": "stackrun",
+  "version": "1.0.0",
+  "description": "Run multiple services with optional Cloudflare tunneling",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jasenmichael/stackrun.git"
+  },
+  "homepage": "https://github.com/jasenmichael/stackrun#readme",
+  "type": "module",
+  "bin": {
+    "stackrun": "bin/stackrun.js"
+  },
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "default": "./index.js"
+    }
+  },
+  "files": [
+    "bin",
+    "lib",
+    "index.js",
+    "index.d.ts"
+  ],
+  "optionalDependencies": {
+    "@jasenmichael/stackrun-linux-x64-gnu": "1.0.0",
+    "@jasenmichael/stackrun-linux-arm64-gnu": "1.0.0",
+    "@jasenmichael/stackrun-linux-x64-musl": "1.0.0",
+    "@jasenmichael/stackrun-darwin-x64": "1.0.0",
+    "@jasenmichael/stackrun-darwin-arm64": "1.0.0",
+    "@jasenmichael/stackrun-win32-x64-msvc": "1.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -104,13 +104,12 @@ mod tests {
 
     #[test]
     fn objects_deep_merge_preferred_wins() {
-        let a = json!({"tunnelEnabled": true, "cfTunnelConfig": {"tunnelName": "a"}});
-        let b =
-            json!({"tunnelEnabled": false, "cfTunnelConfig": {"tunnelName": "b", "cfToken": "t"}});
+        let a = json!({"tunnel": true, "process": {"prefixLength": 10}});
+        let b = json!({"tunnel": false, "process": {"prefixLength": 8, "handleInput": false}});
         let m = defu(a, b);
-        assert_eq!(m["tunnelEnabled"], true);
-        assert_eq!(m["cfTunnelConfig"]["tunnelName"], "a");
-        assert_eq!(m["cfTunnelConfig"]["cfToken"], "t");
+        assert_eq!(m["tunnel"], true);
+        assert_eq!(m["process"]["prefixLength"], 10);
+        assert_eq!(m["process"]["handleInput"], false);
     }
 
     #[test]
@@ -123,11 +122,11 @@ mod tests {
     #[test]
     fn env_overlay_development() {
         let raw = json!({
-            "tunnelEnabled": false,
-            "$development": { "tunnelEnabled": true },
-            "$env": { "staging": { "tunnelEnabled": true } }
+            "tunnel": false,
+            "$development": { "tunnel": true },
+            "$env": { "staging": { "tunnel": true } }
         });
         let out = apply_env_overlay(raw, Some("development"));
-        assert_eq!(out["tunnelEnabled"], true);
+        assert_eq!(out["tunnel"], true);
     }
 }

@@ -16,5 +16,7 @@ Rust should keep this information architecture: Stackrun logs vs prefixed child 
 
 ## Non-goals
 
-- No HTML dashboard.
+- No HTML dashboard and no product web UI.
 - No interactive config wizard in the first Rust phases.
+
+GitHub Pages (`docs` branch, generated at publish) is an install landing page plus `install.sh`, not a control surface.

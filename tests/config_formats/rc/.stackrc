@@ -1,2 +1,1 @@
-tunnelEnabled=false
-beforeCommands[]=echo rc
+before[]=echo rc

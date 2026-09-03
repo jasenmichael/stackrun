@@ -1,11 +1,9 @@
-use serde::de::{self, Deserializer, MapAccess, Visitor};
-use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::fmt;
 
 /// Canonical Stackrun configuration.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StackrunConfig {
     pub before: Option<Vec<String>>,
     pub after: Option<Vec<String>>,
@@ -14,6 +12,7 @@ pub struct StackrunConfig {
     pub tunnel: Option<TunnelSetting>,
     pub commands: Option<Vec<CommandEntry>>,
     /// Set by `--tunnel` / `TUNNEL=true`. Not a config-file key.
+    #[serde(skip)]
     pub force_tunnel: bool,
 }
 
@@ -51,7 +50,7 @@ impl StackrunConfig {
         self.after.as_deref().unwrap_or(&[])
     }
 
-    /// Commands that have a non-empty `run` (entries without a string command are filtered).
+    /// Commands that have a non-empty `run` (entries without a string `run` are filtered).
     pub fn runnable_commands(&self) -> Vec<Command> {
         self.commands
             .as_deref()
@@ -60,89 +59,6 @@ impl StackrunConfig {
             .filter_map(CommandEntry::to_command)
             .filter(|c| !c.run.is_empty())
             .collect()
-    }
-}
-
-impl Serialize for StackrunConfig {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("StackrunConfig", 5)?;
-        state.serialize_field("before", &self.before)?;
-        state.serialize_field("after", &self.after)?;
-        state.serialize_field("process", &self.process)?;
-        state.serialize_field("tunnel", &self.tunnel)?;
-        state.serialize_field("commands", &self.commands)?;
-        state.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for StackrunConfig {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = StackrunConfigRaw::deserialize(deserializer)?;
-        Ok(raw.into())
-    }
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[serde(rename_all = "camelCase", default)]
-struct StackrunConfigRaw {
-    before: Option<Vec<String>>,
-    before_commands: Option<Vec<String>>,
-    after: Option<Vec<String>>,
-    after_commands: Option<Vec<String>>,
-    process: Option<ProcessOptions>,
-    concurrently_options: Option<ProcessOptions>,
-    tunnel: Option<TunnelSetting>,
-    tunnel_enabled: Option<bool>,
-    cf_tunnel_config: Option<LegacyCfTunnelConfig>,
-    commands: Option<Vec<CommandEntry>>,
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[serde(rename_all = "camelCase", default)]
-struct LegacyCfTunnelConfig {
-    remove_existing: Option<bool>,
-    remove_existing_tunnel: Option<bool>,
-    remove_existing_dns: Option<bool>,
-    tunnel_name: Option<String>,
-    command_options: Option<LegacyCommandOptions>,
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[serde(rename_all = "camelCase", default)]
-struct LegacyCommandOptions {
-    name: Option<String>,
-    prefix_color: Option<String>,
-}
-
-impl From<StackrunConfigRaw> for StackrunConfig {
-    fn from(raw: StackrunConfigRaw) -> Self {
-        let before = raw.before.or(raw.before_commands);
-        let after = raw.after.or(raw.after_commands);
-        let process = raw.process.or(raw.concurrently_options);
-        let legacy = TunnelDefaults::from_legacy(raw.cf_tunnel_config.as_ref());
-
-        let tunnel = match raw.tunnel {
-            Some(TunnelSetting::Flag(false)) => Some(TunnelSetting::Flag(false)),
-            Some(TunnelSetting::Flag(true)) => Some(legacy.into_setting_or_flag(true)),
-            Some(TunnelSetting::Defaults(d)) => {
-                Some(TunnelSetting::Defaults(d.merge_missing(&legacy)))
-            }
-            None => match raw.tunnel_enabled {
-                Some(false) => Some(TunnelSetting::Flag(false)),
-                Some(true) => Some(legacy.into_setting_or_flag(true)),
-                None if legacy.is_empty() => None,
-                None => Some(TunnelSetting::Defaults(legacy)),
-            },
-        };
-
-        StackrunConfig {
-            before,
-            after,
-            process,
-            tunnel,
-            commands: raw.commands,
-            force_tunnel: false,
-        }
     }
 }
 
@@ -177,62 +93,12 @@ fn nonempty_owned(value: Option<String>) -> Option<String> {
     value.filter(|s| !s.is_empty())
 }
 
-impl TunnelDefaults {
-    fn from_legacy(cf: Option<&LegacyCfTunnelConfig>) -> Self {
-        let Some(cf) = cf else {
-            return Self::default();
-        };
-        let opts = cf.command_options.as_ref();
-        Self {
-            remove_existing: cf
-                .remove_existing
-                .or(cf.remove_existing_tunnel)
-                .or(cf.remove_existing_dns),
-            prefix: opts.and_then(|o| nonempty_owned(o.name.clone())),
-            color: opts.and_then(|o| nonempty_owned(o.prefix_color.clone())),
-            resource: nonempty_owned(cf.tunnel_name.clone()),
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.remove_existing.is_none()
-            && self.prefix.is_none()
-            && self.color.is_none()
-            && self.resource.is_none()
-    }
-
-    fn merge_missing(mut self, other: &Self) -> Self {
-        if self.remove_existing.is_none() {
-            self.remove_existing = other.remove_existing;
-        }
-        if self.prefix.is_none() {
-            self.prefix = other.prefix.clone();
-        }
-        if self.color.is_none() {
-            self.color = other.color.clone();
-        }
-        if self.resource.is_none() {
-            self.resource = other.resource.clone();
-        }
-        self
-    }
-
-    fn into_setting_or_flag(self, flag: bool) -> TunnelSetting {
-        if self.is_empty() {
-            TunnelSetting::Flag(flag)
-        } else {
-            TunnelSetting::Defaults(self)
-        }
-    }
-}
-
 /// Process options Stackrun honors.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ProcessOptions {
     pub kill_others: Option<KillOthers>,
     pub handle_input: Option<bool>,
-    #[serde(alias = "prefixColors")]
     pub colors: Option<PrefixColors>,
     pub prefix_length: Option<u32>,
     pub cwd: Option<String>,
@@ -320,8 +186,8 @@ impl CommandEntry {
 }
 
 /// One stack command (a concurrent OS process).
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Command {
     pub run: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -339,14 +205,14 @@ pub struct Command {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct CommandTunnel {
-    #[serde(alias = "url", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub local: Option<String>,
-    #[serde(alias = "tunnelUrl", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub public: Option<String>,
-    #[serde(alias = "tunnelEnv", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub env: Option<BTreeMap<String, EnvValue>>,
-    /// Cloudflare object name. Alias: `name`.
-    #[serde(alias = "name", skip_serializing_if = "Option::is_none")]
+    /// Cloudflare object name.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resource: Option<String>,
     /// Sibling log prefix. Falls back to stack `tunnel.prefix`, then `Tunnel`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -386,7 +252,7 @@ impl Command {
         self.named_tunnel_name_with(&TunnelDefaults::default())
     }
 
-    /// Cloudflare object name: command `resource`/`name`, else stack `resource`,
+    /// Cloudflare object name: command `resource`, else stack `resource`,
     /// else `command.name`, else `stackrun`.
     pub fn named_tunnel_name_with(&self, defaults: &TunnelDefaults) -> Option<String> {
         if !self.is_named_tunnel() {
@@ -450,87 +316,7 @@ impl Command {
     }
 }
 
-impl<'de> Deserialize<'de> for Command {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct CommandVisitor;
-
-        impl<'de> Visitor<'de> for CommandVisitor {
-            type Value = Command;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a stackrun command object")
-            }
-
-            fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Command, M::Error> {
-                let mut run: Option<String> = None;
-                let mut name = None;
-                let mut cwd = None;
-                let mut env = None;
-                let mut color = None;
-                let mut tunnel: Option<CommandTunnel> = None;
-                let mut url = None;
-                let mut tunnel_url = None;
-                let mut tunnel_env = None;
-
-                while let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "run" | "command" => {
-                            run = Some(map.next_value()?);
-                        }
-                        "name" => name = Some(map.next_value()?),
-                        "cwd" => cwd = Some(map.next_value()?),
-                        "env" => env = Some(map.next_value()?),
-                        "color" | "prefixColor" => color = Some(map.next_value()?),
-                        "tunnel" => tunnel = Some(map.next_value()?),
-                        "url" => url = Some(map.next_value()?),
-                        "tunnelUrl" => tunnel_url = Some(map.next_value()?),
-                        "tunnelEnv" => tunnel_env = Some(map.next_value()?),
-                        _ => {
-                            let _: de::IgnoredAny = map.next_value()?;
-                        }
-                    }
-                }
-
-                let tunnel = match tunnel {
-                    Some(mut t) => {
-                        if t.local.is_none() {
-                            t.local = url;
-                        }
-                        if t.public.is_none() {
-                            t.public = tunnel_url;
-                        }
-                        if t.env.is_none() {
-                            t.env = tunnel_env;
-                        }
-                        Some(t)
-                    }
-                    None if url.is_some() || tunnel_url.is_some() || tunnel_env.is_some() => {
-                        Some(CommandTunnel {
-                            local: url,
-                            public: tunnel_url,
-                            env: tunnel_env,
-                            ..CommandTunnel::default()
-                        })
-                    }
-                    None => None,
-                };
-
-                Ok(Command {
-                    run: run.unwrap_or_default(),
-                    name,
-                    cwd,
-                    env,
-                    color,
-                    tunnel,
-                })
-            }
-        }
-
-        deserializer.deserialize_map(CommandVisitor)
-    }
-}
-
-/// Node allows `string | boolean` env values (undefined omitted).
+/// Env values may be `string | boolean | number`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum EnvValue {
@@ -556,9 +342,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn command_tunnel_name_is_resource_alias() {
+    fn command_tunnel_resource_field() {
         let t: CommandTunnel =
-            serde_json::from_str(r#"{"local":"http://localhost:1","name":"bugpin"}"#).unwrap();
+            serde_json::from_str(r#"{"local":"http://localhost:1","resource":"bugpin"}"#).unwrap();
         assert_eq!(t.resource.as_deref(), Some("bugpin"));
     }
 
@@ -609,19 +395,23 @@ mod tests {
     }
 
     #[test]
-    fn legacy_cftunnel_maps_prefix_color_resource() {
+    fn stack_tunnel_defaults_and_command_tunnel() {
         let cfg: StackrunConfig = serde_json::from_str(
             r#"{
-                "cfTunnelConfig": {
-                    "tunnelName": "bugpin",
-                    "removeExistingTunnel": true,
-                    "commandOptions": { "name": "tunnel", "prefixColor": "cyan" }
+                "tunnel": {
+                    "resource": "bugpin",
+                    "removeExisting": true,
+                    "prefix": "tunnel",
+                    "color": "cyan"
                 },
                 "commands": [{
                     "name": "nuxt",
-                    "command": "echo nuxt",
-                    "url": "http://localhost:3000",
-                    "tunnelUrl": "https://bugpin.example.dev"
+                    "run": "echo nuxt",
+                    "color": "green",
+                    "tunnel": {
+                        "local": "http://localhost:3000",
+                        "public": "https://bugpin.example.dev"
+                    }
                 }]
             }"#,
         )

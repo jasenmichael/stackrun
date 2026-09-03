@@ -14,6 +14,8 @@ It is not tied to a single application language. Commands are opaque argv/shell 
 | --- | --- | --- |
 | CLI binary | `src/main.rs` | Parse CLI, load config, run stack |
 | Library | `src/lib.rs` | Config, stack run, process, tunnel modules |
+| npm `stackrun()` | `npm/stackrun` | Spawn the native binary (`--json` when a config object is passed) |
+| npm `defineStackrunConfig` | `npm/stackrun` | Identity helper + types for JS/TS configs |
 
 ## CLI
 
@@ -104,9 +106,9 @@ Merge semantics: objects deep-merge; arrays concatenate and de-duplicate; primit
 
 ```ts
 {
-  before?: string[];                 // alias: beforeCommands
-  after?: string[];                  // alias: afterCommands
-  process?: ProcessOptions;          // alias: concurrentlyOptions
+  before?: string[];
+  after?: string[];
+  process?: ProcessOptions;
   tunnel?: false | true | {
     removeExisting?: boolean;
     prefix?: string;                 // sibling log name; default Tunnel
@@ -117,7 +119,7 @@ Merge semantics: objects deep-merge; arrays concatenate and de-duplicate; primit
 }
 ```
 
-One-cycle aliases still deserialize. Prefer the new names in new configs.
+Only these keys load. Unknown keys are ignored.
 
 `tunnel: false` disables every cloudflared sibling and skips `tunnel.env`. Omitted `tunnel` (or a defaults object) turns tunneling on when any command has `tunnel.local`. `--tunnel` / `TUNNEL=true` force on and abort if no `local` is set.
 
@@ -125,21 +127,21 @@ One-cycle aliases still deserialize. Prefer the new names in new configs.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `run` | string | Required to run. Alias: `command`. Entries without a string `run` are **filtered out**. |
+| `run` | string | Required to run. Entries without a string `run` are **filtered out**. |
 | `name` | string | Log prefix. Truncated to `process.prefixLength` (default 10), then printed as `[name]` (color on that token only). |
 | `cwd` | string | Per-command working directory |
 | `env` | `Record<string, string \| boolean \| undefined>` | Base env |
-| `color` | string | Prefix color. Alias: `prefixColor`. |
+| `color` | string | Prefix color |
 | `tunnel` | object | Optional. `local` starts a cloudflared sibling. `public` makes it a named tunnel. |
 
 `tunnel` fields:
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `local` | string | Local origin. Alias: `url`. Required for a tunnel sibling. |
-| `public` | string | Public hostname. Alias: `tunnelUrl`. When set: named tunnel + `route dns`. When omitted: quick tunnel (`*.trycloudflare.com`). |
-| `env` | same as `env` | Merged over command `env` when tunneling is on. Alias: `tunnelEnv`. |
-| `resource` | string | Named-tunnel Cloudflare object name. Alias: `name`. Else stack `tunnel.resource`, else `command.name`. Must be unique among named tunnels. |
+| `local` | string | Local origin. Required for a tunnel sibling. |
+| `public` | string | Public hostname. When set: named tunnel + `route dns`. When omitted: quick tunnel (`*.trycloudflare.com`). |
+| `env` | same as `env` | Merged over command `env` when tunneling is on. |
+| `resource` | string | Named-tunnel Cloudflare object name. Else stack `tunnel.resource`, else `command.name`. Must be unique among named tunnels. |
 | `prefix` | string | Cloudflared sibling log prefix. Else stack `tunnel.prefix`, else `Tunnel`. |
 | `color` | string | Sibling prefix color. Else stack `tunnel.color`, else `cyan`. |
 | `removeExisting` | boolean | Per-command override of stack `tunnel.removeExisting`. |
@@ -152,7 +154,7 @@ When tunneling is on: `env = { ...env, ...tunnel.env }`. When not: command `env`
 | --- | --- | --- |
 | `killOthers` | `"failure"` | Kill siblings when a command fails |
 | `handleInput` | `true` | Explicit `false` is honored |
-| `colors` | `"auto"` | Alias: `prefixColors` |
+| `colors` | `"auto"` | Prefix color mode |
 | `prefixLength` | `10` | Names sliced to this length |
 
 ## Process lifecycle
@@ -162,7 +164,7 @@ When tunneling is on: `env = { ...env, ...tunnel.env }`. When not: command `env`
 3. `before`: sequential shell, stdio inherit. Failure aborts.
 4. For each command with `tunnel.local`:
    - **Quick** (no `public`): spawn `{cloudflared} tunnel --url {local}` as a prefixed sibling. No login, no create, no DNS.
-   - **Named** (`public` set): require `cert.pem`; `tunnel create` + `route dns` [+ `--overwrite-dns` when `removeExisting`] + spawn `{cloudflared} tunnel run --url {local} {resource}`. Resource: command `tunnel.resource` / `name`, else stack `tunnel.resource`, else `command.name`.
+   - **Named** (`public` set): require `cert.pem`; `tunnel create` + `route dns` [+ `--overwrite-dns` when `removeExisting`] + spawn `{cloudflared} tunnel run --url {local} {resource}`. Resource: command `tunnel.resource`, else stack `tunnel.resource`, else `command.name`.
    - Sibling `[name]` / color: command `tunnel.prefix` / `tunnel.color`, else stack defaults, else `Tunnel` + `cyan`. Do not copy the user command’s name or color. Print when each sibling starts.
 5. Spawn user commands concurrently (`sh -c` / `cmd /c`). `tunnel.env` overlays `env` when tunneling is on. `handleInput: true` inherits stdin; `false` uses null stdin. Child stdout/stderr lines are prefixed `[name]<space>` (name already sliced to `prefixLength`). `color` / `colors: auto` color only `[name]`; the line body is uncolored. `colors: false` prints `[name]` with no ANSI. Stderr lines still go to stderr. Every child including each cloudflared is prefix-logged. Do not wait-parse trycloudflare URLs.
 6. `after`: sequential shell. **Skipped if any concurrent command failed** (no `finally`). **Ctrl+C** stops every command (Unix process groups), then `after` still runs.
@@ -191,19 +193,26 @@ Per-command sibling. Mix quick and named in one stack.
 
 CLI is highest.
 
-## Intentional differences
+## npm package
 
-1. **Rust is the application.** Node is used only to evaluate JS/TS config via the jiti subprocess. No JS runtime is embedded in the binary.
+The `stackrun` npm package is a bin shim plus a small JS API. It does **not** run the stack in Node.
+
+- `npx stackrun`, `npm i -g stackrun`, and `node_modules/.bin/stackrun` spawn the native binary.
+- `import { stackrun, defineStackrunConfig } from "stackrun"`:
+  - `defineStackrunConfig(config)` returns `config` (types only).
+  - `stackrun()` spawns the binary with no extra args (Rust loads cwd config).
+  - `stackrun(config)` spawns `stackrun --json <json>`.
+  - Options: `tunnel` → `--tunnel`, `dryRun` → `--dry-run`. Stdio inherit. SIGINT is forwarded.
+
+## Product rules
+
+1. **Rust is the application.** Node is used only to evaluate JS/TS config via the jiti subprocess, and as the npm bin/`stackrun()` shim. No JS runtime is embedded in the binary.
 2. **JSON, JSONC, JSON5, YAML, TOML, `.env`, and `.stackrc` load in Rust.** JS/TS need `node` plus local `jiti` or `--jiti npx`.
 3. **`--command <shell>`** builds a one-entry `commands` list and does not require a config file.
 4. **`--json` is a CLI overlay** (highest data priority).
 5. **`stack` owns before/after and per-command tunnel siblings.** `process` owns concurrent spawn, names, `[name]` prefixes (color on the bracket token only, including `colors: auto`), `handleInput`, env/`tunnel.env`, cwd, kill-others-on-failure, SIGINT process-group cleanup. Ctrl+C stops every command, then `after` runs.
 6. **Tunnel manager uses `cloudflared` CLI only** (create / route dns / run / delete). No API token and no REST DNS. Quick tunnels need the binary only. Named tunnels need `cert.pem` from `cloudflared tunnel login`.
 7. **Explicit `handleInput: false` is honored.**
-8. **Every child is prefix-logged**, including each cloudflared. Do not wait-parse trycloudflare URLs. No rainbow prefix.
+8. **Every child is prefix-logged**, including each cloudflared. Do not wait-parse trycloudflare URLs.
 9. **`--dry-run`** prints the loaded/effective config as JSON and exits without running processes or tunnels. Process env secrets are not dumped.
 10. **Omitted `tunnel` follows `tunnel.local`.** If any command has `local`, tunneling is on. Explicit `tunnel: false` still disables. `--tunnel` / `TUNNEL=true` still force on (and abort when no `local` is set).
-
-## Open questions
-
-See `PLAN.md` § Compatibility concerns. Conservative choices already taken are listed there; items marked “needs Jasen” must not silently expand scope.

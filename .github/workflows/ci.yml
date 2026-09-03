@@ -4,13 +4,16 @@ on:
   push:
     branches:
       - main
+      - refactor/rust
   pull_request:
-    branches:
-      - main
 
 jobs:
-  ci:
-    runs-on: ubuntu-latest
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -20,3 +23,54 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.74
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+
+  npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: cargo build
+      - run: npm ci
+      - run: npm run test:npm
+        env:
+          STACKRUN_BINARY: ${{ github.workspace }}/target/debug/stackrun
+
+  pages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash -n scripts/install.sh && bash -n scripts/generate-pages.sh
+      - run: scripts/generate-pages.sh 1.0.0 /tmp/stackrun-pages
+      - run: test -f /tmp/stackrun-pages/install.sh && test -f /tmp/stackrun-pages/.nojekyll
+      - run: grep -q 'v1.0.0' /tmp/stackrun-pages/index.html
+      - run: STACKRUN_VERSION=1.0.0 scripts/install.sh --dry-run
+
+  audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

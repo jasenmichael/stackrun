@@ -47,11 +47,11 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
     let exec_env: Vec<(String, String)> = std::env::vars().collect();
 
     if config.before_commands().is_empty() {
-        info!("No beforeCommands to run");
+        info!("No before hooks to run");
     } else {
-        info!("Running beforeCommands");
+        info!("Running before hooks");
         for command in config.before_commands() {
-            info!("Running beforeCommand: {command}");
+            info!("Running before hook: {command}");
             process::run_hook(command, &exec_env, true)?;
         }
     }
@@ -111,14 +111,14 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
         tunnel::cleanup(&runtime, sess);
     }
 
-    // Ctrl+C stops every concurrent command, then afterCommands still run.
-    // A failed command (no interrupt) still skips afterCommands.
+    // Ctrl+C stops every concurrent command, then `after` still runs.
+    // A failed command (no interrupt) still skips `after`.
     if config.after_commands().is_empty() {
-        info!("No afterCommands to run");
+        info!("No after hooks to run");
     } else if outcome.interrupted || outcome.worst_code == 0 {
-        info!("Running afterCommands");
+        info!("Running after hooks");
         for command in config.after_commands() {
-            info!("Running afterCommand: {command}");
+            info!("Running after hook: {command}");
             process::run_hook(command, &exec_env, false)?;
         }
     }

@@ -1,9 +1,6 @@
-# PLAN.md — Rust refactor
+# PLAN.md — Stackrun engineering
 
-Engineering plan for porting Stackrun from Node.js to a standalone Rust CLI.
-
-**Branch:** `refactor/rust`  
-**Crate location:** repo root (`Cargo.toml` + `src/`). Historical Node lives on `main` only.
+**Crate location:** repo root (`Cargo.toml` + `src/`). npm shim: `npm/stackrun`.
 
 ## Phase status
 
@@ -13,44 +10,27 @@ Engineering plan for porting Stackrun from Node.js to a standalone Rust CLI.
 | 2 | Rust foundation (Cargo, types, CLI types, errors, logging, modules) | Done (`src/`) |
 | 3 | Native configuration | Done (JSON/JSONC/JSON5/YAML/TOML/.env/.stackrc/extends/$env) |
 | 4 | JS/TS Jiti bridge | Done — local `import("jiti")` first; `--jiti npx` / `STACKRUN_JITI=npx` escape hatch; tests skip if `jiti` missing |
-| 5 | Process manager | Done for used subset — spawn, prefixes, auto colors, stdin `handleInput`, before/after, kill-others, SIGINT |
+| 5 | Process manager | Done — spawn, prefixes, auto colors, stdin `handleInput`, before/after, kill-others, SIGINT |
 | 6 | Tunnel manager | Done — per-command quick or named `cloudflared` siblings; no API token / REST DNS |
-| 7 | CLI compatibility | clap flags match Node plus `--command`; `--json` and `--dry-run` implemented |
+| 7 | CLI | clap: `--config`, `--json`, `--tunnel`, `--command`, `--dry-run`, `--jiti` |
 | 8 | Tests | Native config, process lifecycle, mocked tunnel setup, optional JS/TS, CLI flags + config formats via `--dry-run` |
-| 9 | Packaging | Out of scope this pass |
+| 9 | Packaging | In progress — npm wrapper + guarded GitHub Actions release |
 
-## Historical Node architecture (`main`)
-
-```
-dist/cli.mjs (citty)
-    flags: --config/-c, --json (unused), --tunnel/-t, --help, -V
-    (Rust adds --command, implements --json, adds --dry-run)
-    env: TUNNEL=true
-    c12.loadConfig({ name: "stack", configFile, cwd, dotenv: true })
-    stack.config.{js,ts,...json,yaml,toml} | .config/stack.* | .stackrc
-    jiti for JS/TS/JSON; confbox for yaml/jsonc/json5/toml; rc9 for RC
-    StackrunConfig
-    beforeCommands  —  child_process.execSync (sequential, stdio inherit)
-    concurrently(commands [+ tunnel command])
-    afterCommands   —  execSync (only if concurrently result fulfills)
-```
-
-Tunnel was an extra concurrently job: `node --no-warnings -e 'require("cf-tunnel").cfTunnel(...)'`. Missing token or empty ingress aborted the whole run before `beforeCommands`.
-
-## Rust architecture
+## Architecture
 
 ```
 src/
-├── cli          clap Args  →  CliOverrides
+├── cli          clap Args
 ├── config       discover + parse + merge + env  →  StackrunConfig
 │     native     json/jsonc/json5/yaml/toml/.env/.stackrc
 │     bridge     Node+Jiti subprocess (JS/TS only)
 ├── stack        before, per-command tunnel siblings, concurrent commands, after, cleanup
 ├── process      spawn, prefix, signals, kill-others (children only)
 └── tunnel       named create/route/run + quick `--url` (cloudflared CLI only)
+npm/stackrun     bin shim + stackrun() / defineStackrunConfig (spawn native binary)
 ```
 
-`StackrunConfig` is canonical and serde-based. Process and tunnel never import c12/jiti.
+`StackrunConfig` is canonical and serde-based. Only SPEC keys deserialize. Process and tunnel never import c12/jiti.
 
 ### Module map
 
@@ -58,7 +38,7 @@ src/
 | --- | --- |
 | `error` | `thiserror` error type |
 | `config` | Public: `load_config`, types. Private: discover, parse, merge, dotenv, rc |
-| `cli` | clap definition, version, aliases |
+| `cli` | clap definition, version |
 | `bridge` | Detect JS/TS; spawn Node+Jiti |
 | `stack` | Stack run: hooks, per-command tunnel siblings, concurrent commands, cleanup |
 | `process` | Child spawn, prefix, SIGINT, kill-others |
@@ -67,70 +47,58 @@ src/
 
 ## Architecture deepening
 
-Follow-on after the Rust port. Behavior stays the same unless a row says otherwise. Do in this order.
-
 | # | Change | Status | Notes |
 | --- | --- | --- | --- |
-| 1 | Extract stack run from `process` | Done | `stack::run` / `stack::run_with_tunnel` own lifecycle. `process` only children. `main` and tests call `stack`. |
-| 2 | Effective `StackrunConfig` at load | Done | `load_config` applies defaults once. `--dry-run` only redacts. `stack` does not call `apply_defaults`. |
-| 3 | Domain names for Rust types | Done | `ProcessOptions` / `Command`. File keys: `process`, `run`, `color`, `before` / `after`. Old names still deserialize for one cycle. Ctrl+C stops every command then runs `after` (failure still skips). |
-| 4 | Split `TunnelSession` vs tunnel command | Done | One named session per command with `public`. Quick commands have no session. Each cloudflared is a prefixed sibling. |
-| 5 | Hide config pipeline behind load | Done | `discover`/`parse`/`merge`/`dotenv`/`rc` are crate-private. External interface is `load_config`. RC beats `extends` when main omits a key (SPEC). No `ConfigParser` trait. |
-| 6 | Process spawn seam | Done (fakes only) | No spawn trait (one adapter). `MockCloudflared` exported; `tests/tunnel_fakes.rs` / `tests/two_servers.rs` call `stack::run_with_tunnel`. |
-| 7 | Per-command tunnels | Done | `tunnel.local` only → quick (`cloudflared tunnel --url`). `local` + `public` → named create + `route dns` + `tunnel run --url`. Mix in one stack. |
-| 8 | Drop token / REST DNS | Done | No `CF_TOKEN`, no `src/tunnel/dns.rs`, no `reqwest`. `removeExisting` is `tunnel delete -f` + `route dns --overwrite-dns`. Cleanup does not delete the CNAME. |
-| 9 | Config rename | Done | Docs use new names. Serde aliases: `command`/`run`, `prefixColor`/`color`, `url`/`tunnel.local`, `tunnelUrl`/`tunnel.public`, `beforeCommands`/`afterCommands`, `concurrentlyOptions`/`process`, `cfTunnelConfig`, `tunnelEnabled`, `tunnelEnv`. |
-| 10 | Namable tunnel sibling | Done | Sibling log `prefix`/`color` (default `Tunnel`/`cyan`). CF object is `resource` (alias `name`). `cfTunnelConfig.commandOptions` + `tunnelName` still map. |
+| 1 | Extract stack run from `process` | Done | `stack::run` / `stack::run_with_tunnel` own lifecycle. `process` only children. |
+| 2 | Effective `StackrunConfig` at load | Done | `load_config` applies defaults once. `--dry-run` only redacts. |
+| 3 | Domain names | Done | File keys: `process`, `run`, `color`, `before` / `after`. No legacy aliases. |
+| 4 | Split `TunnelSession` vs tunnel command | Done | One named session per command with `public`. Each cloudflared is a prefixed sibling. |
+| 5 | Hide config pipeline behind load | Done | External interface is `load_config`. RC beats `extends` when main omits a key. |
+| 6 | Process spawn seam | Done (fakes only) | `MockCloudflared` exported; tests call `stack::run_with_tunnel`. |
+| 7 | Per-command tunnels | Done | `tunnel.local` only → quick. `local` + `public` → named. Mix in one stack. |
+| 8 | No token / REST DNS | Done | `cloudflared` CLI only. Cleanup does not delete the CNAME. |
+| 9 | SPEC-only config keys | Done | No serde aliases for dropped keys. |
+| 10 | Namable tunnel sibling | Done | Sibling log `prefix`/`color` (default `Tunnel`/`cyan`). CF object is `resource`. |
 
-`src/stack.rs` is the product entry. `process` exposes `run_hook` + `run_concurrent`. Tunnel is a one-adapter seam (`CloudflaredOps`). No new traits.
+`src/stack.rs` is the product entry. `process` exposes `run_hook` + `run_concurrent`. Tunnel is a one-adapter seam (`CloudflaredOps`).
 
 ### Crate choices
 
 See `STACK.md`. Short why:
 
-- **clap** — standard CLI; matches flags/aliases.
-- **serde family** — config is data, not code (except JS/TS bridge).
-- **json5** — JSON5 + JSONC without pulling confbox.
-- **serde_yaml / toml** — mature native formats.
-- **custom `.env` parser** — interpolation reimplemented to match c12 (`${VAR}`, no override of real env).
-- **thiserror + anyhow** — lib vs bin.
-- **std::process, not Tokio** — current orchestration is spawn/wait. Revisit if async I/O on many pipes becomes a measured problem.
-- **ctrlc / owo-colors** — signals and prefixes.
+- **clap** — standard CLI
+- **serde family** — config is data, not code (except JS/TS bridge)
+- **json5** — JSON5 + JSONC
+- **serde_yaml / toml** — native formats
+- **custom `.env` parser** — `${VAR}` interpolation, no override of real env
+- **thiserror + anyhow** — lib vs bin
+- **std::process, not Tokio** — spawn/wait
+- **ctrlc / owo-colors** — signals and prefixes
 
-## Compatibility concerns (conservative choices)
-
-### Needs Jasen confirmation
-
-1. **`--command`** — name/alias (`-x`?); ignore a present config vs overlay as sole `commands` (today: overlay replace, rest of file kept).
-2. **`--json`** — keep as highest-priority overlay?
-7. **`package.json` `stack` key** — stay off unless you want it.
-8. **Global `~/.stackrc`** — stay off unless you want it.
-9. **Remote `extends`** — stay local-only unless you want it.
-10. **Also auto-discover `stackrun.config.*`?** Conservative: no.
-11. **Distribution** — cargo install only this pass.
-
-### Decisions already taken (conservative)
+## Decisions
 
 - Do not load `package.json` config.
 - Do not load home-directory RC.
-- Do not implement giget/remote extends.
-- Keep extension order (JS/TS before YAML). If `stack.config.ts` and `stack.config.yaml` both exist, JS/TS wins and needs `node` + jiti (or `--jiti npx`).
-- JS/TS jiti: local `import` only by default. No `npm i`, no default `npx`. `--jiti npx` / `STACKRUN_JITI=npx` retries via `npx -p jiti`. Never recommend a global jiti install.
-- Keep `TUNNEL=true` exact match (not truthy `1` / `yes`).
-- Omitted `tunnel` + any `tunnel.local` enables tunnels (explicit `tunnel: false` still off).
+- Do not implement remote `extends`.
+- Extension order: JS/TS before YAML.
+- JS/TS jiti: local `import` only by default. `--jiti npx` / `STACKRUN_JITI=npx` retries via `npx -p jiti`.
+- `TUNNEL=true` exact match (not `1` / `yes`).
+- Omitted `tunnel` + any `tunnel.local` enables tunnels (`tunnel: false` still off).
 - Filter commands without a string `run`.
 - Truncate names to `prefixLength` (default 10).
-- Honor explicit `handleInput: false` (Node quirk dropped).
-- `--tunnel` with no `tunnel.local` aborts before hooks. Missing `cloudflared` when tunnels are on is `CloudflaredMissing`.
+- Honor explicit `handleInput: false`.
+- `--tunnel` with no `tunnel.local` aborts before hooks.
 - Skip `after` on process-group failure. Ctrl+C stops every command, then `after` runs.
-- Prefix-log every child including each cloudflared. No rainbow name.
-- This branch has no Node application. Reference `main` for the old sources.
+- Prefix-log every child including each cloudflared.
 
-## Packaging plan (Phase 9, not this pass)
+## Packaging (Phase 9)
 
-- Publish platform binaries.
-- Optional later: npm optionalDependencies with platform packages and a `bin` shim that execs the native binary.
-- JS/TS configs can keep using a tiny Jiti helper; that is not the old Node runner.
+- Cross-compiled binaries on merge to `main` (GitHub Actions).
+- npm `stackrun` meta package: `bin` + `import { stackrun }` (spawn native binary).
+- Platform optionalDependencies under `@jasenmichael/stackrun-<os>-<arch>`.
+- Publish jobs stay guarded until a version-bump PR is merged. No laptop `npm publish` / `cargo publish`.
+- Dynamic docs: automd + changelogen in the release PR.
+- GitHub Pages on the `docs` branch at publish: `scripts/generate-pages.sh` writes `install.sh` + landing HTML. Curl install: `https://jasenmichael.github.io/stackrun/install.sh`.
 
 ## Verification
 

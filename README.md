@@ -1,61 +1,120 @@
-# stackrun
+# 🥞 stackrun 🏃
 
-Process-orchestration CLI. Run one or more arbitrary commands concurrently, with prefixed log output, lifecycle hooks, and optional Cloudflare tunneling.
+[![CI](https://github.com/jasenmichael/stackrun/actions/workflows/ci.yml/badge.svg)](https://github.com/jasenmichael/stackrun/actions/workflows/ci.yml)
 
-Commands are opaque OS processes: Python, Go, shell, or any executable.
+<!-- automd:badges license -->
+<!-- /automd -->
+
+Process-orchestration CLI. Run one or more OS commands at the same time, with prefixed logs, lifecycle hooks, and optional Cloudflare tunnels.
+
+Commands are opaque processes. Python, Node, Go, shell, or any executable works. Stackrun does not interpret your app language.
+
+It is a standalone Rust binary. Node evaluates JS/TS config files and, in the npm package, shims `stackrun` / `import { stackrun }`.
+
+Use it when a local stack is several processes you would otherwise start in separate terminals.
 
 ## Features
 
-- One config file for a local stack of services
-- Concurrent processes with prefixed, color-coded output
+- One config file for a local stack
+- Concurrent processes with `[name]` prefixes (color on the name only)
 - Ctrl+C stops every command, then runs `after`
-- Config: JSON, JSONC, JSON5, YAML, TOML, `.env`, and `.stackrc`
-- Optional JS/TS config (needs `node` plus local `jiti`, or `--jiti npx`)
+- JSON, JSONC, JSON5, YAML, TOML, `.env`, and `.stackrc`
+- Optional JS/TS config (`node` plus local `jiti`, or `--jiti npx`)
 - Lifecycle hooks (`before` / `after`)
-- Per-command `env`, `cwd`, and `tunnel.env` overlays
-- One-off runs with `--command` (no config file required)
-- `--dry-run` prints the loaded config as JSON without starting processes or tunnels
-- Per-command Cloudflare tunnels via `cloudflared`: quick (`tunnel.local` only → `*.trycloudflare.com`) or named (`local` + `public` on your zone)
-
-Requires `cloudflared` on PATH when any tunnel is on. Named tunnels also need `cloudflared tunnel login` (`cert.pem`). No API token.
+- Per-command `env`, `cwd`, and `tunnel.env`
+- One-off runs with `--command` (no config file)
+- `--dry-run` prints the loaded config as JSON
+- Per-command Cloudflare tunnels: quick (`*.trycloudflare.com`) or named (your zone)
 
 ## Requirements
 
-- A [Rust](https://rustup.rs/) stable toolchain (`rust-toolchain.toml` pins `stable`)
-- Unix is the primary platform (process groups on SIGINT). Windows uses `cmd /c` without the extra process-group handling.
-- Tunneling: [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/) on PATH. Named tunnels: `cloudflared tunnel login` once (`cert.pem`). Quick tunnels need the binary only.
+Unix is the primary platform. On SIGINT, Stackrun stops each child process group. Windows uses `cmd /c` without that extra group handling.
+
+Tunneling needs [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/) on PATH.
+
+Named tunnels also need `cloudflared tunnel login` once (`cert.pem`). Quick tunnels need the binary only. No API token.
+
+Node is needed only for the npm package (`npx`, `npm i`, or `import { stackrun }`) or for JS/TS config files. See [JS/TS config](#jsts-config). YAML, TOML, and JSON need no Node.
 
 ## Installation
 
-From a clone of this repo:
+### GitHub Releases
+
+No Rust or Node. The install script detects OS/arch, downloads the matching archive, checks `SHA256SUMS`, and puts `stackrun` in `~/.local/bin`.
 
 ```sh
+curl -fsSL https://jasenmichael.github.io/stackrun/install.sh | sh
+```
+
+Pin a version or install directory:
+
+```sh
+curl -fsSL https://jasenmichael.github.io/stackrun/install.sh | STACKRUN_VERSION=1.0.0 sh
+curl -fsSL https://jasenmichael.github.io/stackrun/install.sh | STACKRUN_INSTALL=/usr/local/bin sh
+```
+
+The script and landing page live on GitHub Pages (`docs` branch): https://jasenmichael.github.io/stackrun/
+
+Manual install: pick an archive from [GitHub Releases](https://github.com/jasenmichael/stackrun/releases). Names are `stackrun-v<version>-<target>.tar.gz` (Unix) or `.zip` (Windows).
+
+Targets: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-musl`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`.
+
+Extract `stackrun` (or `stackrun.exe`) onto your `PATH`. Windows has no curl script; use the zip.
+
+```sh
+# Example: Linux x86_64 (gnu). Get the archive and SHA256SUMS from the release.
+tar -xzf stackrun-v1.0.0-x86_64-unknown-linux-gnu.tar.gz
+sudo mv stackrun-v1.0.0-x86_64-unknown-linux-gnu/stackrun /usr/local/bin/
+sha256sum -c SHA256SUMS
+```
+
+### crates.io
+
+Needs `cargo` because cargo builds the crate.
+
+```sh
+cargo install stackrun
+```
+
+### npm
+
+Needs Node. Use `npx` with no install, a global install, or a per-project install. See [Programmatic API](#programmatic-api) for `import { stackrun }`.
+
+```sh
+npx stackrun
+npm i -g stackrun
+npm i -D stackrun   # then ./node_modules/.bin/stackrun
+```
+
+<!-- automd:pm-install name="stackrun" -->
+<!-- /automd -->
+
+<!-- automd:pm-x name="stackrun" -->
+<!-- /automd -->
+
+### From source
+
+A [Rust](https://rustup.rs/) stable toolchain (`rust-toolchain.toml` pins `stable`).
+
+```sh
+git clone https://github.com/jasenmichael/stackrun
+cd stackrun
 cargo install --path .
 ```
 
-Or run without installing:
+This puts `stackrun` on your PATH.
+
+Or run from the repo without installing:
 
 ```sh
 cargo run -- --help
 ```
 
-## Build
-
-Needs a [Rust](https://rustup.rs/) stable toolchain (`rust-toolchain.toml` pins `stable`).
+A release build writes `target/release/stackrun`:
 
 ```sh
-# debug binary: target/debug/stackrun
-cargo build
-
-# release binary: target/release/stackrun
 cargo build --release
-
-# run without installing
-cargo run -- --help
-cargo run -- --config ./stack.config.yaml
 ```
-
-`cargo install --path .` puts `stackrun` on your PATH. Tests: `cargo test`.
 
 ## Quick start
 
@@ -82,6 +141,44 @@ commands:
     run: npm run dev
     cwd: ./web
 ```
+
+Put that file in the project root and run `stackrun`.
+
+## Programmatic API
+
+The npm package exports `stackrun` and `defineStackrunConfig`. Both spawn the native binary. They do not run the stack in Node.
+
+<!-- automd:jsimport name="stackrun" imports="stackrun,defineStackrunConfig" -->
+<!-- /automd -->
+
+```ts
+import { stackrun, defineStackrunConfig } from "stackrun";
+
+export default defineStackrunConfig({
+  commands: [{ name: "api", run: "npm run dev", cwd: "./api" }],
+});
+
+await stackrun();
+await stackrun({ commands: [{ name: "api", run: "npm run dev" }] });
+```
+
+## How it works
+
+Stackrun loads one config from the current directory, then applies `.env`, `.stackrc`, local `extends`, and `NODE_ENV` overlays. CLI flags win last.
+
+`--dry-run` uses that same load path and prints the result as JSON. It does not start processes, hooks, or tunnels.
+
+If tunneling is on, Stackrun checks for `cloudflared` (and `cert.pem` for named tunnels) before any hook runs.
+
+`before` hooks run one at a time with inherited stdio. A failed hook aborts the stack.
+
+Every command then starts at once. Each child, including each `cloudflared`, prints as `[name] line`. Color applies to the name token only.
+
+If one command fails, the rest are killed (`killOthers: failure`). Ctrl+C stops every process group on Unix.
+
+`after` hooks run when every command exits 0, or after Ctrl+C. They are skipped if a command failed.
+
+Named tunnels are deleted on exit. DNS CNAMEs are left in place.
 
 ## Usage
 
@@ -114,9 +211,9 @@ stackrun --dry-run
 stackrun --dry-run --command "echo hello"
 ```
 
-`--command` replaces the `commands` list. `--json` is a JSON **string**, not a file path. Either flag is enough to run without a config file on disk.
+`--command` replaces the `commands` list. `--json` is a JSON string, not a file path. Either flag is enough to run without a config file.
 
-`--dry-run` uses the same load path as a real run (file discovery, `.stackrc`, `.env`, local `extends`, `NODE_ENV` overlays, then CLI flags), then prints:
+`--dry-run` prints:
 
 ```json
 {
@@ -125,7 +222,7 @@ stackrun --dry-run --command "echo hello"
 }
 ```
 
-`configFile` is `null` when no file was used (`--command` / `--json` only). Exit 0 on a successful load; exit 1 on load errors. Process env is not dumped.
+`configFile` is `null` when no file was used. Exit 0 on a successful load; exit 1 on load errors. Process env is not dumped.
 
 ## Configuration
 
@@ -133,11 +230,13 @@ stackrun --dry-run --command "echo hello"
 
 `.json`, `.jsonc`, `.json5`, `.yaml`, `.yml`, `.toml`.
 
-JS/TS (`.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, `.cts`) need `node` on `PATH` and [jiti](https://github.com/unjs/jiti) in this project (`npm i -D jiti`), or `--jiti npx`. Prefer YAML or TOML unless you need a programmed config.
+JS/TS (`.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, `.cts`) need `node` on PATH and [jiti](https://github.com/unjs/jiti) in this project (`npm i -D jiti`), or `--jiti npx`.
+
+Prefer YAML or TOML unless you need a programmed config.
 
 ### Discovery
 
-Default base name is `stack.config`. Lookup, first existing file wins, extensions in this order:
+Default base name is `stack.config`. The first existing file wins. Extensions are tried in this order:
 
 `.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, `.cts`, `.json`, `.jsonc`, `.json5`, `.yaml`, `.yml`, `.toml`
 
@@ -147,14 +246,16 @@ Search paths:
 2. `{cwd}/.config/{name-without-.config}{ext}` — e.g. `.config/stack.yaml`
 3. `{cwd}/.config/{configFile}{ext}` — e.g. `.config/stack.config.yaml`
 
-If both `stack.config.ts` and `stack.config.yaml` exist, the TypeScript file wins and needs `node` + jiti. Pass `--config stack.config.yaml` to force the YAML file.
+If both `stack.config.ts` and `stack.config.yaml` exist, TypeScript wins and needs `node` plus jiti. Pass `--config stack.config.yaml` to force YAML.
 
 Also loaded from the current working directory (not the home directory):
 
-- `.env` — interpolated (`${VAR}` / `$VAR`); does not override already-set env vars; keys starting with `_` are skipped. YAML/JSON/TOML config values are not interpolated; JS/TS configs can read `process.env` after this load.
+- `.env` — interpolated (`${VAR}` / `$VAR`); does not override already-set env vars; keys starting with `_` are skipped.
 - `.stackrc` — rc-style `KEY=VALUE` (dotted keys)
 
-`extends` is supported for **local paths only**. `package.json` is not read as config.
+YAML, JSON, and TOML values are not interpolated. JS/TS configs can read `process.env` after `.env` loads.
+
+`extends` is supported for local paths only. `package.json` is not read as config.
 
 ### Precedence
 
@@ -190,17 +291,21 @@ Entries without a string `run` are ignored.
 | `cwd` | string | Working directory |
 | `env` | map | Environment variables (`string` or `boolean`) |
 | `color` | string | Prefix color (`red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`) |
-| `tunnel` | object | Optional per-command tunnel (see below) |
+| `tunnel` | object | Optional per-command tunnel (see [Tunnels](#tunnels)) |
 
 A command may also be a bare string: `commands: ["echo hello"]`.
 
 ### `before` / `after`
 
-String arrays. Each item is run sequentially in a shell with inherited stdio. `before` failure aborts. `after` runs when every concurrent command exits 0, **or** after Ctrl+C has stopped every command. They are skipped if a command fails (`killOthers: failure` kills the rest first).
+String arrays. Each item runs sequentially in a shell with inherited stdio.
+
+`before` failure aborts. `after` runs when every concurrent command exits 0, or after Ctrl+C has stopped every command.
+
+They are skipped if a command fails (`killOthers: failure` kills the rest first).
 
 ### `process`
 
-Defaults applied at load (same value `--dry-run` prints):
+Defaults applied at load (same values `--dry-run` prints):
 
 ```yaml
 process:
@@ -210,29 +315,35 @@ process:
   prefixLength: 10
 ```
 
-Stackrun starts every `commands` entry at once (that is the point). It honors `killOthers` (kill the rest on failure), `prefixLength`, `handleInput` (stdin inherit vs null), and `colors: auto` (cycle colors onto `[name]` when `color` is unset). Child logs look like `[api] …` — color on the bracketed name only.
+Stackrun starts every `commands` entry at once. It honors `killOthers`, `prefixLength`, `handleInput` (stdin inherit vs null), and `colors: auto`.
 
-Ctrl+C stops every running command (process groups on Unix), then runs `after`.
+Child logs look like `[api] …`. Color is on the bracketed name only.
 
-### `tunnel` (per command)
+## Tunnels
 
-A command with no `tunnel` key has no cloudflared sibling.
+A command with no `tunnel` key has no `cloudflared` sibling.
 
 | Field | Description |
 | --- | --- |
 | `local` | Local origin (`http://127.0.0.1:4000`). |
 | `public` | Public hostname. Set this for a named tunnel + `route dns`. Omit it for a quick tunnel. |
 | `env` | Merged over `env` when tunneling is on. |
-| `resource` | Cloudflare object name. Alias: `name`. Else stack `tunnel.resource`, else `command.name`. Unique among named tunnels. |
+| `resource` | Cloudflare object name. Else stack `tunnel.resource`, else `command.name`. Unique among named tunnels. |
 | `prefix` | Cloudflared log prefix. Else stack `tunnel.prefix`, else `Tunnel`. |
 | `color` | Cloudflared prefix color. Else stack `tunnel.color`, else `cyan`. |
 | `removeExisting` | Per-command override of stack `tunnel.removeExisting`. |
 
-**Quick** (`local` only): `cloudflared tunnel --url <local>` → random `*.trycloudflare.com`. No login, no token, no create, no DNS.
+**Quick** (`local` only): `cloudflared tunnel --url <local>` opens a random `*.trycloudflare.com` host. No login, no token, no DNS.
 
-**Named** (`local` + `public`): `cloudflared tunnel create` + `route dns` + `tunnel run --url <local> <resource>`. Needs `cert.pem` from `cloudflared tunnel login`. Stack `tunnel.removeExisting: true` runs `tunnel delete -f` if the name exists and `route dns --overwrite-dns`. Cleanup deletes the tunnel and local creds; it does **not** delete the CNAME (leftover host shows `1016`).
+**Named** (`local` + `public`): `cloudflared tunnel create` + `route dns` + `tunnel run --url <local> <resource>`.
 
-`--tunnel` / `TUNNEL=true` force tunnels on. `tunnel: false` at stack level runs the commands without cloudflared and without `tunnel.env`. `--tunnel` with zero `local` exits 1 before hooks. If tunneling is on and `cloudflared` is missing, exit `CloudflaredMissing` before hooks.
+Named tunnels need `cert.pem` from `cloudflared tunnel login`. Stack `tunnel.removeExisting: true` deletes an existing name and overwrites DNS.
+
+Cleanup deletes the tunnel and local creds. It does not delete the CNAME. A leftover host shows Cloudflare `1016`.
+
+`--tunnel` / `TUNNEL=true` force tunnels on. `tunnel: false` at stack level runs commands without `cloudflared` and without `tunnel.env`.
+
+`--tunnel` with zero `local` exits 1 before hooks. If tunneling is on and `cloudflared` is missing, Stackrun exits before hooks.
 
 ## Environment variables
 
@@ -294,7 +405,7 @@ commands:
     tunnel:
       local: http://127.0.0.1:4000
       public: https://api.example.dev
-      resource: api-cf              # Cloudflare object; alias: name
+      resource: api-cf              # Cloudflare object name
       env: { PUBLIC_API: https://api.example.dev }
   - name: web
     run: python3 -m http.server 3000 --bind 127.0.0.1
@@ -305,9 +416,13 @@ commands:
 
 ### JS/TS config
 
-Needs `node` on `PATH` and `jiti` importable from this project (`npm i -D jiti`). Global `npm i -g jiti` is not visible to `import`.
+Needs `node` on PATH and `jiti` importable from this project (`npm i -D jiti`). A global `npm i -g jiti` is not visible to `import`.
 
-If local jiti is missing, either switch to YAML/TOML/JSON, install jiti in the project, or retry with `--jiti npx` (or `STACKRUN_JITI=npx`). That runs `npx -p jiti node ...` so jiti is on that process’s module path. First run may download jiti (needs network). Stackrun never runs `npm i` for you and never defaults to `npx`.
+If local jiti is missing, switch to YAML/TOML/JSON, install jiti in the project, or retry with `--jiti npx`.
+
+That runs `npx -p jiti node ...` so jiti is on that process's module path. First run may download jiti (needs network).
+
+Stackrun never runs `npm i` for you and never defaults to `npx`.
 
 ```ts
 export default {
@@ -328,36 +443,13 @@ Requires a Rust stable toolchain.
 cargo test
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
-cargo run -- --help
-cargo run -- --command 'echo hello'
-cargo run -- --dry-run --command 'echo hello'
 ```
 
-Checked-in config fixtures live next to the integration tests: `tests/config_formats/` (one real file per format), `tests/cli_flags/`, and `tests/docker_stack/` (Compose stacks with `before` up / `after` down; live tests skip without a Docker daemon). YAML/JSON/TOML values are not interpolated; `.env` `${VAR}` expansion applies to the env file itself, and JS/TS configs can read `process.env` after that load.
+Behavior: [SPEC.md](SPEC.md). Tools: [STACK.md](STACK.md). Output: [DESIGN.md](DESIGN.md). Plan: [PLAN.md](PLAN.md).
 
-## Project docs
+Checked-in fixtures live next to the integration tests: `tests/config_formats/`, `tests/cli_flags/`, and `tests/docker_stack/`.
 
-| File | Owns |
-| --- | --- |
-| [SPEC.md](SPEC.md) | Product behavior (wins if it disagrees with STACK) |
-| [STACK.md](STACK.md) | Tools and hosting |
-| [DESIGN.md](DESIGN.md) | Terminal output / visual non-goals |
-| [PLAN.md](PLAN.md) | Engineering plan and open questions |
-
-## Status
-
-**Works today**
-
-- Config load (JSON / JSONC / JSON5 / YAML / TOML / `.env` / `.stackrc` / local `extends` / `NODE_ENV` overlays)
-- CLI: `--config`, positional config, `--command`, `--json`, `--tunnel`, `--dry-run`, `--jiti`, `--help`, `--version`
-- Process manager: concurrent shell spawn of every command, `[name]` prefixes (color on the bracket token only), `color` / `colors: auto`, `handleInput`, `before` / `after`, kill-others-on-failure, Ctrl+C stops all commands then `after`
-- Per-command tunnels: quick (`tunnel --url`) and/or named (`create` + `route dns` + `tunnel run --url`); prefix-log every cloudflared; no API token
-- JS/TS config via `node` + local `jiti`, or `--jiti npx`
-
-**Not in this pass**
-
-- Wait-parse trycloudflare URLs into command env
-- Packaging: no GitHub-release binaries
+Docker Compose fixtures skip without a Docker daemon.
 
 ## Contributing
 
@@ -373,9 +465,8 @@ Published under the [MIT](./LICENSE) license.
 
 Maintained by [@jasenmichael](https://github.com/jasenmichael).
 
-## Goals
+<!-- automd:contributors -->
+<!-- /automd -->
 
-1. A standalone Rust CLI that runs mixed-language local stacks from one config file.
-2. JSON, YAML, TOML, and relatives as the usual config; JS/TS only when those files are used (`node` + local `jiti`, or `--jiti npx`).
-3. Per-command Cloudflare tunnels (`cloudflared`; quick and/or named; no API token).
-4. Publish platform binaries later.
+<!-- automd:with automd -->
+<!-- /automd -->

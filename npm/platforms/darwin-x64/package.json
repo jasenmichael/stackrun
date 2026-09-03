@@ -1,0 +1,9 @@
+{
+  "name": "@jasenmichael/stackrun-darwin-x64",
+  "version": "1.0.0",
+  "description": "stackrun native binary for macOS x64",
+  "license": "MIT",
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "files": ["stackrun"]
+}

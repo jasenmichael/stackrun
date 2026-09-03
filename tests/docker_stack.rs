@@ -1,12 +1,12 @@
-//! Docker Compose fixtures: `beforeCommands` up, dummy probe, `afterCommands` down.
+//! Docker Compose fixtures: `before` up, dummy probe, `after` down.
 //!
 //! Live tests skip when `docker` / `docker compose` is missing or `docker info` fails
 //! (no daemon). Spawn the `stackrun` binary with `cwd` = fixture dir so compose files
 //! resolve. `stack::run` uses the process cwd for hooks; cargo test is parallel, so
 //! we do not `chdir`.
 //!
-//! Product skips `afterCommands` when any concurrent command fails (no `finally`).
-//! Ctrl+C is the other stop: every command dies, then `afterCommands` run.
+//! Product skips `after` when any concurrent command fails (no `finally`).
+//! Ctrl+C is the other stop: every command dies, then `after` run.
 //! These fixtures still `down -v` on the success path. A [`ComposeCleanup`] guard also
 //! downs if the dummy fails or the test panics, so leftover containers do not linger.
 
@@ -81,7 +81,7 @@ fn skip_docker() -> bool {
     }
 }
 
-/// Tear down the fixture compose project even when stackrun skips afterCommands.
+/// Tear down the fixture compose project even when stackrun skips `after`.
 struct ComposeCleanup {
     dir: PathBuf,
 }

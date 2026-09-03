@@ -81,21 +81,17 @@ pub fn load_config(options: LoadOptions) -> Result<LoadedConfig, Error> {
     let mut layers: Vec<Value> = Vec::new();
 
     if let Some(json) = &options.json_overlay {
-        layers.push(normalize_legacy_keys(parse_json_overlay(json)?));
+        layers.push(parse_json_overlay(json)?);
     }
 
     // SPEC: main > RC > extends (defu: earlier layer wins).
     let mut extends_layers = Vec::new();
     if let Some(path) = &resolved {
-        let mut main = normalize_legacy_keys(load_layer(&options.cwd, path, options.jiti)?);
+        let mut main = load_layer(&options.cwd, path, options.jiti)?;
         let extends = take_extends(&mut main)?;
         for source in extends {
             let ext_path = resolve_extends_path(path, &source);
-            extends_layers.push(normalize_legacy_keys(load_layer(
-                &options.cwd,
-                &ext_path,
-                options.jiti,
-            )?));
+            extends_layers.push(load_layer(&options.cwd, &ext_path, options.jiti)?);
         }
         layers.push(main);
     }
@@ -104,7 +100,7 @@ pub fn load_config(options: LoadOptions) -> Result<LoadedConfig, Error> {
     if rc_path.is_file() {
         let mut rc = parse_rc_file(&rc_path)?;
         rc = apply_env_overlay(rc, env::var("NODE_ENV").ok().as_deref());
-        layers.push(normalize_legacy_keys(rc));
+        layers.push(rc);
     }
 
     layers.extend(extends_layers);
@@ -154,35 +150,6 @@ fn load_layer(cwd: &Path, path: &Path, jiti: JitiMode) -> Result<Value, Error> {
     let mut value = parse_file(&abs)?;
     value = apply_env_overlay(value, env::var("NODE_ENV").ok().as_deref());
     Ok(value)
-}
-
-/// Rewrite one-cycle aliases onto the new keys so defu merges the same field
-/// (`tunnelEnabled` vs `tunnel`, `beforeCommands` vs `before`, …).
-fn normalize_legacy_keys(mut value: Value) -> Value {
-    let Some(obj) = value.as_object_mut() else {
-        return value;
-    };
-    rename_if_absent(obj, "beforeCommands", "before");
-    rename_if_absent(obj, "afterCommands", "after");
-    rename_if_absent(obj, "concurrentlyOptions", "process");
-    if !obj.contains_key("tunnel") {
-        if let Some(enabled) = obj.remove("tunnelEnabled") {
-            obj.insert("tunnel".into(), enabled);
-        }
-    } else {
-        obj.remove("tunnelEnabled");
-    }
-    value
-}
-
-fn rename_if_absent(obj: &mut serde_json::Map<String, Value>, old: &str, new: &str) {
-    if !obj.contains_key(new) {
-        if let Some(v) = obj.remove(old) {
-            obj.insert(new.to_string(), v);
-        }
-    } else {
-        obj.remove(old);
-    }
 }
 
 fn resolve_extends_path(from_file: &Path, source: &str) -> PathBuf {
@@ -353,29 +320,28 @@ mod tests {
     }
 
     #[test]
-    fn old_keys_still_load() {
+    fn spec_keys_load() {
         let _g = env_lock();
         env::remove_var("TUNNEL");
         let dir = tempdir().unwrap();
         fs::write(
             dir.path().join("stack.config.yaml"),
-            "tunnelEnabled: false\n\
-             concurrentlyOptions:\n  handleInput: false\n  prefixColors: auto\n\
-             beforeCommands:\n  - echo old-before\n\
-             afterCommands:\n  - echo old-after\n\
-             cfTunnelConfig:\n  removeExistingTunnel: true\n\
-             commands:\n  - name: api\n    command: echo hi\n    prefixColor: green\n    url: http://localhost:1\n    tunnelUrl: https://x.example\n    tunnelEnv:\n      PUBLIC: x\n",
+            "tunnel: false\n\
+             process:\n  handleInput: false\n  colors: auto\n\
+             before:\n  - echo spec-before\n\
+             after:\n  - echo spec-after\n\
+             commands:\n  - name: api\n    run: echo hi\n    color: green\n    tunnel:\n      local: http://localhost:1\n      public: https://x.example\n      env:\n        PUBLIC: x\n",
         )
         .unwrap();
         let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
         assert!(!loaded.config.tunnel_enabled());
         assert_eq!(
             loaded.config.before_commands(),
-            &["echo old-before".to_string()]
+            &["echo spec-before".to_string()]
         );
         assert_eq!(
             loaded.config.after_commands(),
-            &["echo old-after".to_string()]
+            &["echo spec-after".to_string()]
         );
         assert_eq!(
             loaded.config.process.as_ref().unwrap().handle_input,
@@ -408,19 +374,17 @@ mod tests {
     }
 
     #[test]
-    fn dry_run_drops_legacy_token_and_keeps_path() {
+    fn dry_run_keeps_path_and_omits_process_env() {
         let dir = tempdir().unwrap();
         fs::write(
             dir.path().join("stack.config.yaml"),
-            "cfTunnelConfig:\n  cfToken: super-secret\ncommands:\n  - run: echo hi\n",
+            "commands:\n  - run: echo hi\n",
         )
         .unwrap();
         let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
         let report = dry_run_report(&loaded);
         let json = format_dry_run(&loaded).unwrap();
-        assert!(!json.contains("super-secret"), "{json}");
-        assert!(!json.contains("cfToken"), "{json}");
-        assert!(!json.contains("cfTunnelConfig"), "{json}");
+        assert!(!json.contains("PATH="), "{json}");
         assert!(report.config_file.is_some());
     }
 }

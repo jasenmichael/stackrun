@@ -90,40 +90,36 @@ mod tests {
             Path::new("x.jsonc"),
             r#"{
               // comment
-              "tunnelEnabled": true,
-              "commands": [{ "command": "echo hi", }],
+              "tunnel": true,
+              "commands": [{ "run": "echo hi", }],
             }"#,
         )
         .unwrap();
-        assert_eq!(v["tunnelEnabled"], true);
-        assert_eq!(v["commands"][0]["command"], "echo hi");
+        assert_eq!(v["tunnel"], true);
+        assert_eq!(v["commands"][0]["run"], "echo hi");
     }
 
     #[test]
     fn json_commands() {
-        let v = parse_str(
-            Path::new("x.json"),
-            r#"{"commands":[{"command":"echo json"}]}"#,
-        )
-        .unwrap();
-        assert_eq!(v["commands"][0]["command"], "echo json");
+        let v = parse_str(Path::new("x.json"), r#"{"commands":[{"run":"echo json"}]}"#).unwrap();
+        assert_eq!(v["commands"][0]["run"], "echo json");
     }
 
     #[test]
     fn json5_commands() {
         let v = parse_str(
             Path::new("x.json5"),
-            "{ commands: [{ command: 'echo json5' }] }",
+            "{ commands: [{ run: 'echo json5' }] }",
         )
         .unwrap();
-        assert_eq!(v["commands"][0]["command"], "echo json5");
+        assert_eq!(v["commands"][0]["run"], "echo json5");
     }
 
     #[test]
     fn yaml_commands() {
         let v = parse_str(
             Path::new("x.yaml"),
-            "commands:\n  - name: api\n    command: python server.py\n",
+            "commands:\n  - name: api\n    run: python server.py\n",
         )
         .unwrap();
         assert_eq!(v["commands"][0]["name"], "api");
@@ -136,7 +132,7 @@ mod tests {
             r#"
 [[commands]]
 name = "web"
-command = "npm run dev"
+run = "npm run dev"
 "#,
         )
         .unwrap();

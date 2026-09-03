@@ -1,4 +1,7 @@
 /target
+/site
+node_modules/
+*.tgz
 **/*.rs.bk
 .vscode
 .DS_Store

@@ -314,7 +314,7 @@ fn dry_run_does_not_spawn_hooks_or_commands() {
 }
 
 #[test]
-fn dry_run_redacts_cf_token_and_omits_env_token() {
+fn dry_run_omits_process_env_secrets() {
     let output = run_in_with_env(
         &flags_root(),
         &["--dry-run", "--config", "redact.yaml"],
@@ -328,7 +328,5 @@ fn dry_run_redacts_cf_token_and_omits_env_token() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.contains("file-secret-token"), "{stdout}");
     assert!(!stdout.contains("env-only-secret"), "{stdout}");
-    assert!(!stdout.contains("cfToken"), "{stdout}");
-    assert!(!stdout.contains("cfTunnelConfig"), "{stdout}");
     let _report = stdout_json(&output);
 }
