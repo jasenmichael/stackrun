@@ -1,5 +1,8 @@
 /target
 /site
+__pycache__/
+*.pyc
+tests/**/*.ran
 website/build
 website/.docusaurus
 node_modules/
