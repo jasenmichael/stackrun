@@ -79,12 +79,17 @@ fn assert_cmd(report: &Value, name: &str, command: &str) {
         .iter()
         .find(|c| c["name"] == name)
         .unwrap_or_else(|| panic!("missing command {name}: {cmds:?}"));
-    assert_eq!(entry["command"], command, "{name}");
+    assert_eq!(entry["run"], command, "{name}");
+}
+
+fn tunnel_on(v: &Value) -> bool {
+    v["config"]["tunnel"] != serde_json::json!(false)
 }
 
 fn jiti_available() -> bool {
     let Ok(status) = Command::new("node")
         .args(["--input-type=module", "-e", "await import('jiti')"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
         .status()
     else {
         return false;
@@ -138,8 +143,8 @@ fn loads_json() {
     let report = assert_native_format("json", "stack.config.json", "from-json", "echo from-json");
     assert_eq!(report["config"]["commands"][0]["cwd"], "./json-cwd");
     assert_eq!(report["config"]["commands"][0]["env"]["FROM"], "json");
-    assert_eq!(report["config"]["commands"][0]["prefixColor"], "green");
-    assert_eq!(report["config"]["tunnelEnabled"], false);
+    assert_eq!(report["config"]["commands"][0]["color"], "green");
+    assert_eq!(report["config"]["tunnel"], false);
 }
 
 #[test]
@@ -166,21 +171,21 @@ fn loads_json5() {
 #[test]
 fn loads_yaml() {
     let report = assert_native_format("yaml", "stack.config.yaml", "from-yaml", "echo from-yaml");
-    assert_eq!(report["config"]["tunnelEnabled"], true);
-    assert_eq!(report["config"]["beforeCommands"][0], "echo before-yaml");
-    assert_eq!(report["config"]["afterCommands"][0], "echo after-yaml");
+    assert!(tunnel_on(&report));
+    assert_eq!(report["config"]["before"][0], "echo before-yaml");
+    assert_eq!(report["config"]["after"][0], "echo after-yaml");
     assert_eq!(report["config"]["commands"][0]["cwd"], "./yaml-cwd");
     assert_eq!(report["config"]["commands"][0]["env"]["FROM"], "yaml");
     assert_eq!(
-        report["config"]["commands"][0]["url"],
+        report["config"]["commands"][0]["tunnel"]["local"],
         "http://localhost:4000"
     );
     assert_eq!(
-        report["config"]["commands"][0]["tunnelUrl"],
+        report["config"]["commands"][0]["tunnel"]["public"],
         "https://yaml.example"
     );
     assert_eq!(
-        report["config"]["commands"][0]["tunnelEnv"]["TUNNELED"],
+        report["config"]["commands"][0]["tunnel"]["env"]["TUNNELED"],
         "1"
     );
 }
@@ -193,7 +198,7 @@ fn omitted_tunnel_enabled_with_ingress_enables() {
         "from-auto-tunnel",
         "echo from-auto-tunnel",
     );
-    assert_eq!(report["config"]["tunnelEnabled"], true);
+    assert!(tunnel_on(&report));
 }
 
 #[test]
@@ -204,7 +209,7 @@ fn explicit_tunnel_enabled_false_keeps_ingress_disabled() {
         "from-explicit-off",
         "echo from-explicit-off",
     );
-    assert_eq!(report["config"]["tunnelEnabled"], false);
+    assert_eq!(report["config"]["tunnel"], false);
 }
 
 #[test]
@@ -216,7 +221,7 @@ fn loads_yml() {
 fn loads_toml() {
     let report = assert_native_format("toml", "stack.config.toml", "from-toml", "echo from-toml");
     assert_eq!(report["config"]["commands"][0]["cwd"], "./toml-cwd");
-    assert_eq!(report["config"]["tunnelEnabled"], false);
+    assert_eq!(report["config"]["tunnel"], false);
 }
 
 #[test]
@@ -233,8 +238,8 @@ fn discovers_config_dir_stack_yaml() {
 #[test]
 fn cwd_stackrc_merges() {
     let report = dry_run_ok(&fixture("rc"), &["--dry-run"]);
-    assert_eq!(report["config"]["tunnelEnabled"], true);
-    assert_eq!(report["config"]["beforeCommands"][0], "echo rc");
+    assert!(tunnel_on(&report));
+    assert_eq!(report["config"]["before"][0], "echo rc");
     assert_cmd(&report, "from-rc-main", "echo main");
 }
 
@@ -257,12 +262,12 @@ fn dotenv_loaded_without_dumping_env_into_dry_run() {
 #[test]
 fn local_extends() {
     let report = dry_run_ok(&fixture("extends"), &["--dry-run"]);
-    assert_eq!(report["config"]["beforeCommands"][0], "echo base");
+    assert_eq!(report["config"]["before"][0], "echo base");
     let cmds = report["config"]["commands"].as_array().unwrap();
     assert_eq!(cmds[0]["name"], "from-extends-child");
-    assert_eq!(cmds[0]["command"], "echo child");
+    assert_eq!(cmds[0]["run"], "echo child");
     assert_eq!(cmds[1]["name"], "from-extends-base");
-    assert_eq!(cmds[1]["command"], "echo basecmd");
+    assert_eq!(cmds[1]["run"], "echo basecmd");
 }
 
 #[test]
@@ -278,7 +283,7 @@ fn node_env_overlay() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report = stdout_json(&output);
-    assert_eq!(report["config"]["tunnelEnabled"], true);
+    assert!(tunnel_on(&report));
     assert_cmd(&report, "from-overlay", "echo overlay");
 }
 

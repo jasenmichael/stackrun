@@ -1,4 +1,4 @@
 commands:
   - name: pos
-    command: echo positional
+    run: echo positional
     cwd: ./pos

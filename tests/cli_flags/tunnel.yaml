@@ -1,2 +1,2 @@
 commands:
-  - command: echo x
+  - run: echo x

@@ -1,12 +1,12 @@
 {
-  "tunnelEnabled": false,
+  "tunnel": false,
   "commands": [
     {
       "name": "from-json",
-      "command": "echo from-json",
+      "run": "echo from-json",
       "cwd": "./json-cwd",
       "env": { "FROM": "json" },
-      "prefixColor": "green"
+      "color": "green"
     }
   ]
 }

@@ -1,10 +1,12 @@
+use crate::cli::JitiMode;
 use crate::error::Error;
 use serde_json::Value;
-use std::path::Path;
-use std::process::{Command, Stdio};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output, Stdio};
+
+const JITI_MISSING_CODE: i32 = 3;
 
 const BRIDGE_SOURCE: &str = r#"
-import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
 
@@ -18,12 +20,8 @@ async function loadJiti() {
   try {
     const mod = await import("jiti");
     return mod.createJiti ?? mod.default?.createJiti ?? mod.default;
-  } catch (err) {
-    console.error(
-      "Could not import jiti. Install it in this project (`npm i jiti`) or use a native config file (YAML, TOML, JSON).",
-    );
-    console.error(err && err.message ? err.message : err);
-    process.exit(1);
+  } catch {
+    process.exit(3);
   }
 }
 
@@ -49,44 +47,106 @@ if (typeof config === "function") {
 process.stdout.write(JSON.stringify(config ?? {}));
 "#;
 
+enum BridgeResult {
+    Config(Value),
+    JitiMissing,
+    Failed(String),
+}
+
 /// Load a JS/TS config by spawning Node + Jiti. Never embeds a JS runtime.
-pub fn load_js_ts(path: &Path) -> Result<Value, Error> {
-    let node = which_node().ok_or_else(|| Error::NodeRequired {
+///
+/// Local first: `node` + `import("jiti")` from `cwd`. If jiti is missing and
+/// `mode` is [`JitiMode::Npx`], retry via `npx -p jiti node ...`. Never installs
+/// into the project.
+pub fn load_js_ts(path: &Path, cwd: &Path, mode: JitiMode) -> Result<Value, Error> {
+    let node = which("node").ok_or_else(|| Error::NodeRequired {
         path: path.to_path_buf(),
     })?;
 
-    let output = Command::new(node)
+    match run_bridge(&node, &[], path, cwd)? {
+        BridgeResult::Config(value) => Ok(value),
+        BridgeResult::JitiMissing => match mode {
+            JitiMode::Local => Err(Error::JitiRequired {
+                path: path.to_path_buf(),
+            }),
+            JitiMode::Npx => load_via_npx(path, cwd),
+        },
+        BridgeResult::Failed(message) => Err(Error::JsBridge {
+            path: path.to_path_buf(),
+            message,
+        }),
+    }
+}
+
+fn load_via_npx(path: &Path, cwd: &Path) -> Result<Value, Error> {
+    let npx = which("npx").ok_or_else(|| Error::NpxRequired {
+        path: path.to_path_buf(),
+    })?;
+
+    match run_bridge(&npx, &["-p", "jiti", "node"], path, cwd)? {
+        BridgeResult::Config(value) => Ok(value),
+        BridgeResult::JitiMissing => Err(Error::JsBridge {
+            path: path.to_path_buf(),
+            message: "npx -p jiti could not import jiti. First run may need network.".into(),
+        }),
+        BridgeResult::Failed(message) => Err(Error::JsBridge {
+            path: path.to_path_buf(),
+            message,
+        }),
+    }
+}
+
+fn run_bridge(
+    program: &Path,
+    prefix: &[&str],
+    path: &Path,
+    cwd: &Path,
+) -> Result<BridgeResult, Error> {
+    let output = spawn_bridge(program, prefix, path, cwd)?;
+    interpret(path, output)
+}
+
+fn spawn_bridge(program: &Path, prefix: &[&str], path: &Path, cwd: &Path) -> Result<Output, Error> {
+    Ok(Command::new(program)
+        .args(prefix)
         .arg("--input-type=module")
         .arg("-e")
         .arg(BRIDGE_SOURCE)
         .env("STACKRUN_BRIDGE_FILE", path)
-        .current_dir(
-            std::env::current_dir().unwrap_or_else(|_| path.parent().unwrap_or(path).to_path_buf()),
-        )
+        .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::JsBridge {
-            path: path.to_path_buf(),
-            message: stderr.trim().to_string(),
-        });
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    serde_json::from_str(&stdout).map_err(|err| Error::JsBridge {
-        path: path.to_path_buf(),
-        message: format!("Jiti bridge returned invalid JSON: {err}"),
-    })
+        .output()?)
 }
 
-fn which_node() -> Option<std::path::PathBuf> {
-    let name = if cfg!(windows) { "node.exe" } else { "node" };
-    if let Ok(path) = std::env::var("PATH") {
-        for dir in std::env::split_paths(&path) {
+fn interpret(path: &Path, output: Output) -> Result<BridgeResult, Error> {
+    if output.status.code() == Some(JITI_MISSING_CODE) {
+        return Ok(BridgeResult::JitiMissing);
+    }
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Ok(BridgeResult::Failed(stderr.trim().to_string()));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let value = serde_json::from_str(&stdout).map_err(|err| Error::JsBridge {
+        path: path.to_path_buf(),
+        message: format!("Jiti bridge returned invalid JSON: {err}"),
+    })?;
+    Ok(BridgeResult::Config(value))
+}
+
+fn which(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        if cfg!(windows) {
+            for ext in [".exe", ".cmd", ".bat", ""] {
+                let candidate = dir.join(format!("{name}{ext}"));
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        } else {
             let candidate = dir.join(name);
             if candidate.is_file() {
                 return Some(candidate);

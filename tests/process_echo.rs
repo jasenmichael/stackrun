@@ -1,11 +1,11 @@
-use stackrun::config::types::{CommandEntry, Command, StackrunConfig};
+use stackrun::config::types::{Command, CommandEntry, StackrunConfig};
 use stackrun::stack;
 
 #[test]
 fn runs_echo_command() {
     let config = StackrunConfig {
         commands: Some(vec![CommandEntry::Full(Command {
-            command: "echo stackrun-ok".into(),
+            run: "echo stackrun-ok".into(),
             name: Some("echo".into()),
             ..Command::default()
         })]),

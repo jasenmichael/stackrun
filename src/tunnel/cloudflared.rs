@@ -13,9 +13,9 @@ pub trait CloudflaredOps: Send + Sync {
     fn binary_path(&self) -> Result<String, Error>;
     fn has_cert(&self, config_dir: &Path) -> bool;
     fn list_tunnels(&self) -> Result<Vec<TunnelRow>, Error>;
-    fn delete_tunnel(&self, id: &str) -> Result<(), Error>;
-    fn create_tunnel(&self, name: &str) -> Result<(), Error>;
-    fn route_dns(&self, tunnel_name: &str, hostname: &str) -> Result<(), Error>;
+    fn delete_tunnel(&self, name_or_id: &str) -> Result<(), Error>;
+    fn create_tunnel(&self, name: &str) -> Result<String, Error>;
+    fn route_dns(&self, tunnel_name: &str, hostname: &str, overwrite: bool) -> Result<(), Error>;
 }
 
 #[derive(Debug, Default)]
@@ -59,17 +59,40 @@ impl CloudflaredOps for RealCloudflared {
         Ok(parse_tunnel_list(&stdout))
     }
 
-    fn delete_tunnel(&self, id: &str) -> Result<(), Error> {
-        self.run_capture(&["tunnel", "delete", id]).map(|_| ())
-    }
-
-    fn create_tunnel(&self, name: &str) -> Result<(), Error> {
-        self.run_capture(&["tunnel", "create", name]).map(|_| ())
-    }
-
-    fn route_dns(&self, tunnel_name: &str, hostname: &str) -> Result<(), Error> {
-        self.run_capture(&["tunnel", "route", "dns", tunnel_name, hostname])
+    fn delete_tunnel(&self, name_or_id: &str) -> Result<(), Error> {
+        self.run_capture(&["tunnel", "delete", "-f", name_or_id])
             .map(|_| ())
+    }
+
+    fn create_tunnel(&self, name: &str) -> Result<String, Error> {
+        let stdout = self.run_capture(&["tunnel", "create", name])?;
+        if let Some(id) = parse_created_id(&stdout) {
+            return Ok(id);
+        }
+        self.list_tunnels()?
+            .into_iter()
+            .find(|row| row.name == name)
+            .map(|row| row.id)
+            .ok_or_else(|| Error::Cloudflared {
+                message: format!("created tunnel `{name}` but could not determine id"),
+            })
+    }
+
+    fn route_dns(&self, tunnel_name: &str, hostname: &str, overwrite: bool) -> Result<(), Error> {
+        if overwrite {
+            self.run_capture(&[
+                "tunnel",
+                "route",
+                "dns",
+                "--overwrite-dns",
+                tunnel_name,
+                hostname,
+            ])
+            .map(|_| ())
+        } else {
+            self.run_capture(&["tunnel", "route", "dns", tunnel_name, hostname])
+                .map(|_| ())
+        }
     }
 }
 
@@ -105,14 +128,28 @@ pub fn parse_tunnel_list(stdout: &str) -> Vec<TunnelRow> {
         .collect()
 }
 
+pub fn parse_created_id(stdout: &str) -> Option<String> {
+    for line in stdout.lines() {
+        if let Some(idx) = line.find("with id ") {
+            return line[idx + 8..]
+                .split_whitespace()
+                .next()
+                .map(|s| s.to_string());
+        }
+    }
+    None
+}
+
 /// In-memory cloudflared adapter (tests). Second adapter next to [`RealCloudflared`].
 pub struct MockCloudflared {
     pub has_cert: bool,
     pub binary: String,
+    pub missing_binary: bool,
     pub list: Mutex<Vec<TunnelRow>>,
     pub created: Mutex<Vec<String>>,
     pub deleted: Mutex<Vec<String>>,
-    pub routed: Mutex<Vec<(String, String)>>,
+    /// `(tunnel_name, hostname, overwrite)`
+    pub routed: Mutex<Vec<(String, String, bool)>>,
     pub fail_list: bool,
 }
 
@@ -121,6 +158,7 @@ impl Default for MockCloudflared {
         Self {
             has_cert: false,
             binary: "cloudflared".into(),
+            missing_binary: false,
             list: Mutex::new(Vec::new()),
             created: Mutex::new(Vec::new()),
             deleted: Mutex::new(Vec::new()),
@@ -132,6 +170,9 @@ impl Default for MockCloudflared {
 
 impl CloudflaredOps for MockCloudflared {
     fn binary_path(&self) -> Result<String, Error> {
+        if self.missing_binary {
+            return Err(Error::CloudflaredMissing);
+        }
         Ok(self.binary.clone())
     }
 
@@ -148,26 +189,31 @@ impl CloudflaredOps for MockCloudflared {
         Ok(self.list.lock().unwrap().clone())
     }
 
-    fn delete_tunnel(&self, id: &str) -> Result<(), Error> {
-        self.deleted.lock().unwrap().push(id.to_string());
-        self.list.lock().unwrap().retain(|r| r.id != id);
-        Ok(())
-    }
-
-    fn create_tunnel(&self, name: &str) -> Result<(), Error> {
-        self.created.lock().unwrap().push(name.to_string());
-        self.list.lock().unwrap().push(TunnelRow {
-            id: "new-id".into(),
-            name: name.to_string(),
-        });
-        Ok(())
-    }
-
-    fn route_dns(&self, tunnel_name: &str, hostname: &str) -> Result<(), Error> {
-        self.routed
+    fn delete_tunnel(&self, name_or_id: &str) -> Result<(), Error> {
+        self.deleted.lock().unwrap().push(name_or_id.to_string());
+        self.list
             .lock()
             .unwrap()
-            .push((tunnel_name.to_string(), hostname.to_string()));
+            .retain(|r| r.id != name_or_id && r.name != name_or_id);
+        Ok(())
+    }
+
+    fn create_tunnel(&self, name: &str) -> Result<String, Error> {
+        self.created.lock().unwrap().push(name.to_string());
+        let id = format!("id-{name}");
+        self.list.lock().unwrap().push(TunnelRow {
+            id: id.clone(),
+            name: name.to_string(),
+        });
+        Ok(id)
+    }
+
+    fn route_dns(&self, tunnel_name: &str, hostname: &str, overwrite: bool) -> Result<(), Error> {
+        self.routed.lock().unwrap().push((
+            tunnel_name.to_string(),
+            hostname.to_string(),
+            overwrite,
+        ));
         Ok(())
     }
 }
@@ -199,5 +245,12 @@ mod tests {
         let rows = parse_tunnel_list(out);
         assert_eq!(rows[0].id, "abc-123");
         assert_eq!(rows[0].name, "api");
+    }
+
+    #[test]
+    fn parses_created_id() {
+        let out =
+            "Tunnel credentials written to /tmp/x.json\nCreated tunnel api with id aabb-ccdd\n";
+        assert_eq!(parse_created_id(out).as_deref(), Some("aabb-ccdd"));
     }
 }

@@ -30,7 +30,8 @@ fn run_in_with_env(cwd: &Path, args: &[&str], extra_env: &[(&str, Option<&str>)]
         .env_remove("CLOUDFLARE_TOKEN")
         .env_remove("CLOUDFLARE_TUNNEL_NAME")
         .env_remove("CF_TUNNEL_NAME")
-        .env_remove("RUST_LOG");
+        .env_remove("RUST_LOG")
+        .env_remove("STACKRUN_JITI");
     for (key, value) in extra_env {
         match value {
             Some(v) => {
@@ -78,6 +79,7 @@ fn help_short_and_long() {
         assert!(stdout.contains("--json"), "{flag}: {stdout}");
         assert!(stdout.contains("--tunnel"), "{flag}: {stdout}");
         assert!(stdout.contains("--dry-run"), "{flag}: {stdout}");
+        assert!(stdout.contains("--jiti"), "{flag}: {stdout}");
         assert!(stdout.contains("-V"), "{flag}: {stdout}");
     }
 }
@@ -129,7 +131,7 @@ fn dry_run_command_without_file() {
         report["config"]["commands"][0],
         "touch ".to_string() + &marker.display().to_string()
     );
-    assert_eq!(report["config"]["tunnelEnabled"], false);
+    assert_eq!(report["config"]["tunnel"], false);
     assert!(!marker.exists(), "dry-run must not spawn --command");
 }
 
@@ -141,7 +143,7 @@ fn dry_run_json_without_file() {
         &[
             "--dry-run",
             "--json",
-            r#"{"commands":[{"name":"hi","command":"echo hello","cwd":"./x"}]}"#,
+            r#"{"commands":[{"name":"hi","run":"echo hello","cwd":"./x"}]}"#,
         ],
     );
     assert!(
@@ -152,7 +154,7 @@ fn dry_run_json_without_file() {
     let report = stdout_json(&output);
     assert!(report["configFile"].is_null());
     assert_eq!(report["config"]["commands"][0]["name"], "hi");
-    assert_eq!(report["config"]["commands"][0]["command"], "echo hello");
+    assert_eq!(report["config"]["commands"][0]["run"], "echo hello");
     assert_eq!(report["config"]["commands"][0]["cwd"], "./x");
 }
 
@@ -178,10 +180,7 @@ fn short_c_and_long_config() {
 fn positional_config() {
     let report = dry_run_ok(&flags_root(), &["--dry-run", "custom.yaml"]);
     assert_eq!(report["config"]["commands"][0]["name"], "pos");
-    assert_eq!(
-        report["config"]["commands"][0]["command"],
-        "echo positional"
-    );
+    assert_eq!(report["config"]["commands"][0]["run"], "echo positional");
     assert!(report["configFile"]
         .as_str()
         .unwrap()
@@ -204,10 +203,10 @@ fn json_overlay_wins_over_file() {
             "--config",
             "overlay.yaml",
             "--json",
-            r#"{"tunnelEnabled":true,"commands":[{"name":"json","command":"echo json"}]}"#,
+            r#"{"tunnel":true,"commands":[{"name":"json","run":"echo json"}]}"#,
         ],
     );
-    assert_eq!(report["config"]["tunnelEnabled"], true);
+    assert_ne!(report["config"]["tunnel"], false);
     // json overlay is preferred; file commands still merge (defu concat unique)
     let names: Vec<&str> = report["config"]["commands"]
         .as_array()
@@ -241,7 +240,7 @@ fn tunnel_short_and_long() {
     let root = flags_root();
     for flag in ["-t", "--tunnel"] {
         let report = dry_run_ok(&root, &["--dry-run", "--config", "tunnel.yaml", flag]);
-        assert_eq!(report["config"]["tunnelEnabled"], true, "{flag}");
+        assert_ne!(report["config"]["tunnel"], false, "{flag}");
     }
 }
 
@@ -258,7 +257,7 @@ fn tunnel_env_true_only() {
         "{}",
         String::from_utf8_lossy(&on.stderr)
     );
-    assert_eq!(stdout_json(&on)["config"]["tunnelEnabled"], true);
+    assert_ne!(stdout_json(&on)["config"]["tunnel"], false);
 
     let off = run_in_with_env(
         &root,
@@ -270,7 +269,7 @@ fn tunnel_env_true_only() {
         "{}",
         String::from_utf8_lossy(&off.stderr)
     );
-    assert_eq!(stdout_json(&off)["config"]["tunnelEnabled"], false);
+    assert_eq!(stdout_json(&off)["config"]["tunnel"], false);
 }
 
 #[test]
@@ -284,7 +283,7 @@ fn tunnel_with_json_and_command() {
             "--command",
             "echo x",
             "--json",
-            r#"{"commands":[{"command":"echo x","url":"http://localhost:1","tunnelUrl":"https://x.example"}]}"#,
+            r#"{"commands":[{"run":"echo x","tunnel":{"local":"http://localhost:1","public":"https://x.example"}}]}"#,
         ],
     );
     assert!(
@@ -293,7 +292,7 @@ fn tunnel_with_json_and_command() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report = stdout_json(&output);
-    assert_eq!(report["config"]["tunnelEnabled"], true);
+    assert_ne!(report["config"]["tunnel"], false);
     // --command replaces commands after json overlay
     assert_eq!(report["config"]["commands"][0], "echo x");
 }
@@ -304,7 +303,7 @@ fn dry_run_does_not_spawn_hooks_or_commands() {
     let config = fixture("hooks.yaml");
     let config_str = config.to_string_lossy();
     let report = dry_run_ok(dir.path(), &["--dry-run", "--config", config_str.as_ref()]);
-    assert!(report["config"]["beforeCommands"][0]
+    assert!(report["config"]["before"][0]
         .as_str()
         .unwrap()
         .contains("before.ran"));
@@ -329,7 +328,7 @@ fn dry_run_redacts_cf_token_and_omits_env_token() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.contains("file-secret-token"), "{stdout}");
     assert!(!stdout.contains("env-only-secret"), "{stdout}");
-    let report = stdout_json(&output);
-    assert_eq!(report["config"]["cfTunnelConfig"]["cfToken"], "[redacted]");
-    assert_eq!(report["config"]["cfTunnelConfig"]["tunnelName"], "demo");
+    assert!(!stdout.contains("cfToken"), "{stdout}");
+    assert!(!stdout.contains("cfTunnelConfig"), "{stdout}");
+    let _report = stdout_json(&output);
 }

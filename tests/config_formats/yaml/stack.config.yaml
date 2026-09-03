@@ -1,15 +1,16 @@
-tunnelEnabled: true
-beforeCommands:
+tunnel: true
+before:
   - echo before-yaml
-afterCommands:
+after:
   - echo after-yaml
 commands:
   - name: from-yaml
-    command: echo from-yaml
+    run: echo from-yaml
     cwd: ./yaml-cwd
     env:
       FROM: yaml
-    url: http://localhost:4000
-    tunnelUrl: https://yaml.example
-    tunnelEnv:
-      TUNNELED: "1"
+    tunnel:
+      local: http://localhost:4000
+      public: https://yaml.example
+      env:
+        TUNNELED: "1"

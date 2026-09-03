@@ -5,3 +5,9 @@
 *.log*
 *.tmp
 graphify-out/
+PLAN.md
+SPEC.md
+STACK.md
+DESIGN.md
+.cursor
+.editorconfig

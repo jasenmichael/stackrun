@@ -2,7 +2,7 @@
 //!
 //! Matches README “Two services”: stackrun starts more than one command at once.
 //! `killOthers: failure` (load default) kills siblings; SIGINT stops every
-//! command, then `afterCommands` run. A failed command still skips `afterCommands`.
+//! command, then `after` hooks run. A failed command still skips `after`.
 
 use stackrun::config::{load_config, LoadOptions};
 use stackrun::stack;
@@ -91,25 +91,25 @@ fn wait_down(port: u16, timeout: Duration) -> bool {
 fn write_two_server_yaml(dir: &Path, api: u16, web: u16, fail: Option<&Path>, after: &Path) {
     let fail_line = match fail {
         Some(path) => format!(
-            "  - name: fail\n    command: \"i=0; while [ ! -f {p} ]; do i=$((i+1)); if [ \\\"$i\\\" -ge 400 ]; then exit 1; fi; sleep 0.05; done; exit 1\"\n",
+            "  - name: fail\n    run: \"i=0; while [ ! -f {p} ]; do i=$((i+1)); if [ \\\"$i\\\" -ge 400 ]; then exit 1; fi; sleep 0.05; done; exit 1\"\n",
             p = quoted(path)
         ),
         None => String::new(),
     };
     let yaml = format!(
-        r#"concurrentlyOptions:
+        r#"process:
   handleInput: false
-beforeCommands:
+before:
   - printf 'ok' > index.html
-afterCommands:
+after:
   - touch {after}
 commands:
   - name: api
-    command: python3 -m http.server {api} --bind 127.0.0.1
-    prefixColor: green
+    run: python3 -m http.server {api} --bind 127.0.0.1
+    color: green
   - name: web
-    command: python3 -m http.server {web} --bind 127.0.0.1
-    prefixColor: blue
+    run: python3 -m http.server {web} --bind 127.0.0.1
+    color: blue
 {fail}"#,
         after = quoted(after),
         api = api,
@@ -139,7 +139,7 @@ fn load_applies_kill_others_default_for_two_servers() {
     assert!(!config.tunnel_enabled());
     assert!(
         config
-            .process_options
+            .process
             .as_ref()
             .is_some_and(|o| o.kill_others_on_failure()),
         "load default killOthers: failure"
@@ -180,7 +180,7 @@ fn two_http_servers_serve_then_kill_others_on_failure() {
     assert!(wait_down(web, Duration::from_secs(5)), "web still up");
     assert!(
         !after.exists(),
-        "afterCommands must skip when a command fails (killOthers: failure)"
+        "after hooks must skip when a command fails (killOthers: failure)"
     );
 }
 
@@ -230,7 +230,7 @@ fn two_http_servers_serve_then_sigint_stops_groups() {
     assert!(wait_down(web, Duration::from_secs(5)), "web still up");
     assert!(
         after.exists(),
-        "afterCommands must run after Ctrl+C stops every command"
+        "after hooks must run after Ctrl+C stops every command"
     );
 }
 

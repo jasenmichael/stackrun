@@ -1,3 +1,3 @@
 commands:
   - name: from-c
-    command: echo a
+    run: echo a

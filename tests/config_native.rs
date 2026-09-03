@@ -8,43 +8,36 @@ fn loads_json_jsonc_json5_yaml_toml() {
     let dir = tempdir().unwrap();
     fs::write(
         dir.path().join("stack.config.yaml"),
-        "commands:\n  - command: echo yaml\n",
+        "commands:\n  - run: echo yaml\n",
     )
     .unwrap();
     let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
-    assert_eq!(loaded.config.runnable_commands()[0].command, "echo yaml");
+    assert_eq!(loaded.config.runnable_commands()[0].run, "echo yaml");
 
     for (name, body, expect) in [
         (
             "a.json",
-            r#"{"commands":[{"command":"echo json"}]}"#,
+            r#"{"commands":[{"run":"echo json"}]}"#,
             "echo json",
         ),
         (
             "a.jsonc",
-            "{ /* c */ \"commands\": [{ \"command\": \"echo jsonc\", }] }",
+            "{ /* c */ \"commands\": [{ \"run\": \"echo jsonc\", }] }",
             "echo jsonc",
         ),
         (
             "a.json5",
-            "{ commands: [{ command: 'echo json5' }] }",
+            "{ commands: [{ run: 'echo json5' }] }",
             "echo json5",
         ),
-        (
-            "a.toml",
-            "[[commands]]\ncommand = \"echo toml\"\n",
-            "echo toml",
-        ),
+        ("a.toml", "[[commands]]\nrun = \"echo toml\"\n", "echo toml"),
     ] {
         let path = dir.path().join(name);
         fs::write(&path, body).unwrap();
         let mut opts = LoadOptions::for_cwd(dir.path());
         opts.config_file = path.to_string_lossy().into_owned();
         let loaded = load_config(opts).unwrap();
-        assert_eq!(
-            loaded.config.runnable_commands()[0].command, expect,
-            "{name}"
-        );
+        assert_eq!(loaded.config.runnable_commands()[0].run, expect, "{name}");
     }
 }
 
@@ -56,7 +49,7 @@ fn discovers_stack_config_yaml_without_node() {
         r#"
 commands:
   - name: py
-    command: python server.py
+    run: python server.py
 "#,
     )
     .unwrap();
@@ -64,7 +57,7 @@ commands:
     let cmds = loaded.config.runnable_commands();
     assert_eq!(cmds.len(), 1);
     assert_eq!(cmds[0].name.as_deref(), Some("py"));
-    assert_eq!(cmds[0].command, "python server.py");
+    assert_eq!(cmds[0].run, "python server.py");
 }
 
 #[test]
@@ -72,7 +65,7 @@ fn explicit_config_path() {
     let dir = tempdir().unwrap();
     fs::write(
         dir.path().join("stackrun.yaml"),
-        "commands:\n  - command: echo from-explicit\n",
+        "commands:\n  - run: echo from-explicit\n",
     )
     .unwrap();
     let mut opts = LoadOptions::for_cwd(dir.path());
@@ -83,7 +76,7 @@ fn explicit_config_path() {
         .into_owned();
     let loaded = load_config(opts).unwrap();
     assert_eq!(
-        loaded.config.runnable_commands()[0].command,
+        loaded.config.runnable_commands()[0].run,
         "echo from-explicit"
     );
 }
@@ -93,7 +86,7 @@ fn rc_file_merges_under_main() {
     let dir = tempdir().unwrap();
     fs::write(
         dir.path().join("stack.config.yaml"),
-        "tunnelEnabled: true\ncommands:\n  - command: echo main\n",
+        "tunnel: true\ncommands:\n  - run: echo main\n",
     )
     .unwrap();
     fs::write(
@@ -111,14 +104,14 @@ fn json_cli_overlay_wins() {
     let dir = tempdir().unwrap();
     fs::write(
         dir.path().join("stack.config.yaml"),
-        "tunnelEnabled: false\ncommands:\n  - command: echo file\n",
+        "tunnel: false\ncommands:\n  - run: echo file\n",
     )
     .unwrap();
     let mut opts = LoadOptions::for_cwd(dir.path());
-    opts.json_overlay = Some(r#"{"tunnelEnabled": true}"#.into());
+    opts.json_overlay = Some(r#"{"tunnel": true}"#.into());
     let loaded = load_config(opts).unwrap();
     assert!(loaded.config.tunnel_enabled());
-    assert_eq!(loaded.config.runnable_commands()[0].command, "echo file");
+    assert_eq!(loaded.config.runnable_commands()[0].run, "echo file");
 }
 
 #[test]
@@ -126,7 +119,7 @@ fn command_flag_replaces_commands() {
     let dir = tempdir().unwrap();
     fs::write(
         dir.path().join("stack.config.yaml"),
-        "commands:\n  - command: echo file\n",
+        "commands:\n  - run: echo file\n",
     )
     .unwrap();
     let mut opts = LoadOptions::for_cwd(dir.path());
@@ -134,7 +127,7 @@ fn command_flag_replaces_commands() {
     let loaded = load_config(opts).unwrap();
     let cmds = loaded.config.runnable_commands();
     assert_eq!(cmds.len(), 1);
-    assert_eq!(cmds[0].command, "python server.py");
+    assert_eq!(cmds[0].run, "python server.py");
 }
 
 #[test]
@@ -143,7 +136,7 @@ fn dotenv_does_not_override_existing_env() {
     fs::write(dir.path().join(".env"), "STACKRUN_TEST_DOTENV=fromfile\n").unwrap();
     fs::write(
         dir.path().join("stack.config.yaml"),
-        "commands:\n  - command: echo x\n",
+        "commands:\n  - run: echo x\n",
     )
     .unwrap();
     std::env::set_var("STACKRUN_TEST_DOTENV", "already");
@@ -158,11 +151,11 @@ fn env_specific_overlay() {
     fs::write(
         dir.path().join("stack.config.yaml"),
         r#"
-tunnelEnabled: false
+tunnel: false
 $development:
-  tunnelEnabled: true
+  tunnel: true
 commands:
-  - command: echo x
+  - run: echo x
 "#,
     )
     .unwrap();
@@ -177,12 +170,12 @@ fn local_extends() {
     let dir = tempdir().unwrap();
     fs::write(
         dir.path().join("base.yaml"),
-        "beforeCommands: [echo base]\ncommands:\n  - command: echo basecmd\n",
+        "before: [echo base]\ncommands:\n  - run: echo basecmd\n",
     )
     .unwrap();
     fs::write(
         dir.path().join("stack.config.yaml"),
-        "extends: ./base.yaml\ncommands:\n  - command: echo child\n",
+        "extends: ./base.yaml\ncommands:\n  - run: echo child\n",
     )
     .unwrap();
     let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
@@ -194,7 +187,7 @@ fn local_extends() {
         .unwrap()
         .iter()
         .filter_map(CommandEntry::to_command)
-        .map(|c| c.command)
+        .map(|c| c.run)
         .collect();
     // child commands first (preferred), then unique from base
     assert_eq!(
@@ -208,7 +201,7 @@ fn filters_entries_without_command() {
     let dir = tempdir().unwrap();
     fs::write(
         dir.path().join("stack.config.yaml"),
-        "commands:\n  - name: nope\n  - command: echo yes\n",
+        "commands:\n  - name: nope\n  - run: echo yes\n",
     )
     .unwrap();
     let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
@@ -221,11 +214,53 @@ fn config_dir_stack_yaml() {
     fs::create_dir(dir.path().join(".config")).unwrap();
     fs::write(
         dir.path().join(".config/stack.yaml"),
-        "commands:\n  - command: echo hidden\n",
+        "commands:\n  - run: echo hidden\n",
     )
     .unwrap();
     let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
-    assert_eq!(loaded.config.runnable_commands()[0].command, "echo hidden");
+    assert_eq!(loaded.config.runnable_commands()[0].run, "echo hidden");
+}
+
+#[test]
+fn bugpin_legacy_shape_maps_namable_tunnel() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("stack.config.yaml"),
+        r#"
+concurrentlyOptions:
+  killOthers: failure
+cfTunnelConfig:
+  tunnelName: bugpin
+  removeExistingTunnel: true
+  removeExistingDns: true
+  commandOptions:
+    name: tunnel
+    prefixColor: cyan
+commands:
+  - name: nuxt
+    command: echo nuxt
+    prefixColor: green
+    url: http://localhost:3000
+    tunnelUrl: https://bugpin.example.dev
+"#,
+    )
+    .unwrap();
+    let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
+    let defaults = loaded.config.tunnel_defaults();
+    assert_eq!(defaults.prefix.as_deref(), Some("tunnel"));
+    assert_eq!(defaults.color.as_deref(), Some("cyan"));
+    assert_eq!(defaults.resource.as_deref(), Some("bugpin"));
+    assert_eq!(defaults.remove_existing, Some(true));
+    let cmd = &loaded.config.runnable_commands()[0];
+    assert_eq!(cmd.run, "echo nuxt");
+    assert_eq!(cmd.color.as_deref(), Some("green"));
+    assert_eq!(cmd.tunnel_local(), Some("http://localhost:3000"));
+    assert_eq!(cmd.tunnel_public(), Some("https://bugpin.example.dev"));
+    assert_eq!(cmd.sibling_prefix(&defaults), "tunnel");
+    assert_eq!(
+        cmd.named_tunnel_name_with(&defaults).as_deref(),
+        Some("bugpin")
+    );
 }
 
 #[test]
@@ -233,12 +268,12 @@ fn rc_beats_extends_when_main_omits_key() {
     let dir = tempdir().unwrap();
     fs::write(
         dir.path().join("base.yaml"),
-        "tunnelEnabled: false\nbeforeCommands: [echo base]\n",
+        "tunnel: false\nbefore: [echo base]\n",
     )
     .unwrap();
     fs::write(
         dir.path().join("stack.config.yaml"),
-        "extends: ./base.yaml\ncommands:\n  - command: echo main\n",
+        "extends: ./base.yaml\ncommands:\n  - run: echo main\n",
     )
     .unwrap();
     fs::write(dir.path().join(".stackrc"), "tunnelEnabled=true\n").unwrap();

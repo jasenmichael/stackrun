@@ -19,10 +19,24 @@ pub enum Error {
     },
 
     #[error(
-        "JS/TS config `{path}` requires Node.js to load via Jiti, but `node` was not found on PATH. \
-         Install Node.js, or use a native config file (YAML, TOML, JSON, JSONC, JSON5)."
+        "JS/TS config `{path}` requires Node.js, but `node` was not found on PATH. \
+         Install Node.js, or use a YAML, TOML, or JSON config."
     )]
     NodeRequired { path: PathBuf },
+
+    #[error(
+        "JS/TS config `{path}` needs jiti in this project. \
+         Use a YAML, TOML, or JSON config, run `npm i -D jiti` here, \
+         or retry with `--jiti npx` (or `STACKRUN_JITI=npx`)."
+    )]
+    JitiRequired { path: PathBuf },
+
+    #[error(
+        "`npx` was not found on PATH while loading `{path}`. \
+         Install Node.js and npm, add jiti in this project (`npm i -D jiti`), \
+         or use a YAML, TOML, or JSON config."
+    )]
+    NpxRequired { path: PathBuf },
 
     #[error("JS/TS config `{path}` could not be loaded: {message}")]
     JsBridge { path: PathBuf, message: String },
@@ -30,10 +44,7 @@ pub enum Error {
     #[error("Remote config extends are not supported (`{uri}`). Use a local path.")]
     RemoteExtends { uri: String },
 
-    #[error("Cloudflare token is required for tunneling")]
-    CloudflareTokenRequired,
-
-    #[error("No valid tunnel configurations found")]
+    #[error("--tunnel was set but no command has tunnel.local")]
     NoTunnelIngress,
 
     #[error(
@@ -47,20 +58,17 @@ pub enum Error {
     CloudflaredLoginRequired { dir: String },
 
     #[error(
-        "Tunnel \"{name}\" already exists. Set removeExistingTunnel: true to remove it automatically."
+        "Tunnel \"{name}\" already exists. Set removeExisting: true to remove it automatically."
     )]
     TunnelAlreadyExists { name: String },
 
     #[error(
-        "DNS record for \"{hostname}\" already exists. Set removeExistingDns: true to remove it automatically."
+        "Named tunnel name \"{name}\" is used more than once. Set tunnel.resource or use unique command names."
     )]
-    DnsRecordExists { hostname: String },
+    DuplicateTunnelName { name: String },
 
     #[error("cloudflared failed: {message}")]
     Cloudflared { message: String },
-
-    #[error("Cloudflare API error: {message}")]
-    CloudflareApi { message: String },
 
     #[error("beforeCommand failed (`{command}`): {status}")]
     BeforeCommandFailed { command: String, status: ExitStatus },

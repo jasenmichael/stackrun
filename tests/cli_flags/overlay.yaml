@@ -1,4 +1,4 @@
-tunnelEnabled: false
+tunnel: false
 commands:
   - name: file
-    command: echo file
+    run: echo file

@@ -1,4 +1,4 @@
-beforeCommands: [echo base]
+before: [echo base]
 commands:
   - name: from-extends-base
-    command: echo basecmd
+    run: echo basecmd

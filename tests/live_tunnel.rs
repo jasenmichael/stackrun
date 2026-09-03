@@ -1,5 +1,7 @@
 //! Optional live tunnel check. Skips unless `STACKRUN_LIVE_TUNNEL=1`.
-use stackrun::config::types::{CfTunnelConfig, CommandEntry, Command, StackrunConfig};
+use stackrun::config::types::{
+    Command, CommandEntry, CommandTunnel, StackrunConfig, TunnelDefaults, TunnelSetting,
+};
 use stackrun::stack;
 use stackrun::tunnel::TunnelRuntime;
 
@@ -9,19 +11,20 @@ fn live_tunnel_opt_in() {
         return;
     }
     let config = StackrunConfig {
-        tunnel_enabled: Some(true),
-        cf_tunnel_config: Some(CfTunnelConfig {
-            remove_existing_tunnel: Some(true),
-            remove_existing_dns: Some(true),
-            ..CfTunnelConfig::default()
-        }),
+        tunnel: Some(TunnelSetting::Defaults(TunnelDefaults {
+            remove_existing: Some(true),
+            ..TunnelDefaults::default()
+        })),
         commands: Some(vec![CommandEntry::Full(Command {
-            command: "sleep 1".into(),
+            run: "sleep 1".into(),
             name: Some("sleep".into()),
-            url: Some("http://127.0.0.1:9".into()),
-            tunnel_url: std::env::var("STACKRUN_LIVE_HOSTNAME")
-                .ok()
-                .map(|h| format!("https://{h}")),
+            tunnel: Some(CommandTunnel {
+                local: Some("http://127.0.0.1:9".into()),
+                public: std::env::var("STACKRUN_LIVE_HOSTNAME")
+                    .ok()
+                    .map(|h| format!("https://{h}")),
+                ..CommandTunnel::default()
+            }),
             ..Command::default()
         })]),
         ..StackrunConfig::default()

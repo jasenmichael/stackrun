@@ -1,5 +1,6 @@
+# Legacy token key must not appear in --dry-run output.
 cfTunnelConfig:
   cfToken: file-secret-token
   tunnelName: demo
 commands:
-  - command: echo x
+  - run: echo x

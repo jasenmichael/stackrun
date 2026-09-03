@@ -2,7 +2,7 @@
   // comment
   "commands": [{
     "name": "from-jsonc",
-    "command": "echo from-jsonc",
+    "run": "echo from-jsonc",
     "cwd": "./jsonc-cwd",
   }],
 }

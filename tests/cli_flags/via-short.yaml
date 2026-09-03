@@ -1,3 +1,3 @@
 commands:
   - name: short
-    command: echo short
+    run: echo short

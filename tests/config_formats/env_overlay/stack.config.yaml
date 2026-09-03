@@ -1,6 +1,6 @@
-tunnelEnabled: false
+tunnel: false
 $development:
-  tunnelEnabled: true
+  tunnel: true
 commands:
   - name: from-overlay
-    command: echo overlay
+    run: echo overlay

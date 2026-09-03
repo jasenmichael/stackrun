@@ -1,3 +1,3 @@
 module.exports = {
-  commands: [{ name: "from-cjs", command: "echo from-cjs", cwd: "./from-cjs" }],
+  commands: [{ name: "from-cjs", run: "echo from-cjs", cwd: "./from-cjs" }],
 };

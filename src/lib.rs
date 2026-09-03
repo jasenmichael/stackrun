@@ -12,13 +12,13 @@ pub mod process;
 pub mod stack;
 pub mod tunnel;
 
+pub use config::types::{
+    Command, CommandEntry, CommandTunnel, ProcessOptions, StackrunConfig, TunnelDefaults,
+    TunnelSetting,
+};
 pub use config::{
     apply_defaults, dry_run_report, format_dry_run, load_config, DryRunReport, LoadOptions,
     LoadedConfig,
-};
-pub use config::types::{
-    CfTunnelConfig, Command, CommandEntry, ProcessOptions, StackrunConfig,
-    TunnelCommandOptions,
 };
 pub use error::Error;
 pub use stack::{run, run_with_tunnel};

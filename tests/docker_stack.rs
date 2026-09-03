@@ -209,36 +209,26 @@ fn fixtures_dry_run_without_docker() {
     for name in ["redis", "web", "multi"] {
         let report = dry_run(&fixture(name));
         assert_eq!(
-            report["config"]["tunnelEnabled"], false,
+            report["config"]["tunnel"], false,
             "{name}: tunnels must stay off"
         );
-        assert_eq!(
-            report["config"]["concurrentlyOptions"]["handleInput"],
-            false
-        );
-        assert_eq!(
-            report["config"]["concurrentlyOptions"]["killOthers"],
-            "failure"
-        );
-        let before = report["config"]["beforeCommands"][0].as_str().unwrap_or("");
+        assert_eq!(report["config"]["process"]["handleInput"], false);
+        assert_eq!(report["config"]["process"]["killOthers"], "failure");
+        let before = report["config"]["before"][0].as_str().unwrap_or("");
         assert!(
             before.contains("docker compose") && before.contains("up"),
-            "{name} beforeCommands: {before}"
+            "{name} before: {before}"
         );
-        let after = report["config"]["afterCommands"][0].as_str().unwrap_or("");
+        let after = report["config"]["after"][0].as_str().unwrap_or("");
         assert!(
             after.contains("docker compose") && after.contains("down"),
-            "{name} afterCommands: {after}"
+            "{name} after: {after}"
         );
         let cmds = report["config"]["commands"].as_array().expect("commands");
         for cmd in cmds {
             assert!(
-                cmd.get("url").is_none() || cmd["url"].is_null(),
-                "{name} must not set url: {cmd}"
-            );
-            assert!(
-                cmd.get("tunnelUrl").is_none() || cmd["tunnelUrl"].is_null(),
-                "{name} must not set tunnelUrl: {cmd}"
+                cmd.get("tunnel").is_none() || cmd["tunnel"].is_null(),
+                "{name} must not set tunnel: {cmd}"
             );
         }
     }

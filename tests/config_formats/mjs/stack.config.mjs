@@ -1,3 +1,3 @@
 export default {
-  commands: [{ name: "from-mjs", command: "echo from-mjs", cwd: "./from-mjs" }],
+  commands: [{ name: "from-mjs", run: "echo from-mjs", cwd: "./from-mjs" }],
 };

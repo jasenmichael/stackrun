@@ -2,5 +2,5 @@
 # .env still loads into process env (JS/TS configs can read process.env).
 commands:
   - name: from-dotenv
-    command: echo from-dotenv
+    run: echo from-dotenv
     cwd: ./env-cwd

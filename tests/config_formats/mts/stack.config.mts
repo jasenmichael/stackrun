@@ -1,3 +1,3 @@
 export default {
-  commands: [{ name: "from-mts", command: "echo from-mts", cwd: "./from-mts" }],
+  commands: [{ name: "from-mts", run: "echo from-mts", cwd: "./from-mts" }],
 };

@@ -1,8 +1,8 @@
-//! Stack run: beforeCommands, optional tunnel, concurrent commands, afterCommands.
+//! Stack run: before hooks, optional per-command tunnels, concurrent commands, after hooks.
 //!
 //! Child spawn lives in [`crate::process`]. Cloudflare ops live in [`crate::tunnel`].
 
-use crate::config::types::{Command, StackrunConfig, TunnelCommandOptions};
+use crate::config::types::{Command, StackrunConfig};
 use crate::error::Error;
 use crate::process::{self, ConcurrentRun};
 use crate::tunnel::{self, TunnelRuntime, TunnelSession};
@@ -15,16 +15,32 @@ pub fn run(config: &StackrunConfig) -> Result<u8, Error> {
 
 /// Same as [`run`] with an injectable tunnel backend (tests).
 pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Result<u8, Error> {
-    let tunnel_enabled = config.tunnel_enabled();
+    let tunnel_on = config.tunnel_enabled();
     let cmds = config.runnable_commands();
-    let mut pending_ingress = None;
-    if tunnel_enabled {
+    let has_local = cmds.iter().any(|c| c.tunnel_local().is_some());
+
+    if tunnel_on {
         info!("Tunneling is enabled");
-        pending_ingress = Some(tunnel::prepare(config.cf_tunnel_config.as_ref(), &cmds)?);
+        eprintln!("Tunneling is enabled");
+        if !has_local {
+            return Err(Error::NoTunnelIngress);
+        }
+        let _binary = runtime.cloudflared.binary_path()?;
+        tunnel::unique_named_names(&cmds, &config.tunnel_defaults())?;
+        if cmds.iter().any(|c| c.is_named_tunnel())
+            && !runtime.cloudflared.has_cert(&tunnel::default_config_dir())
+        {
+            return Err(Error::CloudflaredLoginRequired {
+                dir: tunnel::default_config_dir().display().to_string(),
+            });
+        }
     } else {
         info!("Tunneling is disabled");
-        if !tunnel::ingress_from_commands(&cmds).is_empty() {
-            info!("Config has url/tunnelUrl pairs. Pass --tunnel or set TUNNEL=true to start cloudflared as a sibling process");
+        eprintln!("Tunneling is disabled");
+        if has_local {
+            let msg = "Config has tunnel.local. Pass --tunnel or set TUNNEL=true, or omit tunnel: false, to start cloudflared siblings";
+            info!("{msg}");
+            eprintln!("{msg}");
         }
     }
 
@@ -40,45 +56,58 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
         }
     }
 
-    let mut session: Option<TunnelSession> = None;
-    if let Some(ingress) = pending_ingress {
-        let token = tunnel::resolve_token(config.cf_tunnel_config.as_ref())
-            .ok_or(Error::CloudflareTokenRequired)?;
-        session = Some(tunnel::setup(
-            &runtime,
-            config.cf_tunnel_config.as_ref(),
-            ingress,
-            token,
-        )?);
+    let mut sessions: Vec<TunnelSession> = Vec::new();
+    let mut specs = Vec::new();
+    let defaults = config.tunnel_defaults();
+
+    if tunnel_on {
+        for cmd in &cmds {
+            specs.push(cmd.clone());
+            match setup_sibling(&runtime, cmd, &defaults) {
+                Ok(Some((sibling, session))) => {
+                    eprintln!(
+                        "Starting tunnel sibling [{}] for {} at {}",
+                        sibling.name.as_deref().unwrap_or("Tunnel"),
+                        cmd.name.as_deref().unwrap_or("command"),
+                        cmd.tunnel_local().unwrap_or(""),
+                    );
+                    specs.push(sibling);
+                    if let Some(sess) = session {
+                        sessions.push(sess);
+                    }
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    for sess in &sessions {
+                        tunnel::cleanup(&runtime, sess);
+                    }
+                    return Err(err);
+                }
+            }
+        }
+    } else {
+        specs.extend(cmds);
     }
 
-    let mut specs = cmds;
-    if let Some(ref sess) = session {
-        let opts = config
-            .cf_tunnel_config
-            .as_ref()
-            .and_then(|c| c.command_options.as_ref());
-        specs.insert(0, tunnel_command(sess, opts));
-    }
     if specs.is_empty() {
         return Err(Error::NoCommands);
     }
 
     let outcome = match process::run_concurrent(ConcurrentRun {
         commands: specs,
-        options: config.process_options.clone().unwrap_or_default(),
-        apply_tunnel_env: tunnel_enabled,
+        options: config.process.clone().unwrap_or_default(),
+        apply_tunnel_env: tunnel_on,
     }) {
         Ok(outcome) => outcome,
         Err(err) => {
-            if let Some(ref sess) = session {
+            for sess in &sessions {
                 tunnel::cleanup(&runtime, sess);
             }
             return Err(err);
         }
     };
 
-    if let Some(ref sess) = session {
+    for sess in &sessions {
         tunnel::cleanup(&runtime, sess);
     }
 
@@ -105,70 +134,96 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
     Ok(outcome.worst_code)
 }
 
-/// Tunnel sibling is a normal [`Command`]. Display fields come from
-/// `cfTunnelConfig.commandOptions`, not from [`TunnelSession`].
-fn tunnel_command(sess: &TunnelSession, opts: Option<&TunnelCommandOptions>) -> Command {
-    Command {
-        command: tunnel::run_command_line(sess),
-        name: Some(
-            opts.and_then(|o| o.name.clone())
-                .unwrap_or_else(|| "Tunnel".into()),
-        ),
-        cwd: opts.and_then(|o| o.cwd.clone()),
-        prefix_color: opts
-            .and_then(|o| o.prefix_color.clone())
-            .or_else(|| Some("cyan".into())),
-        env: opts.and_then(|o| o.env.clone()),
-        ..Command::default()
+fn setup_sibling(
+    runtime: &TunnelRuntime,
+    cmd: &Command,
+    defaults: &crate::config::types::TunnelDefaults,
+) -> Result<Option<(Command, Option<TunnelSession>)>, Error> {
+    let Some(local) = cmd.tunnel_local() else {
+        return Ok(None);
+    };
+    let binary = runtime.cloudflared.binary_path()?;
+    if let Some(public) = cmd.tunnel_public() {
+        let name = cmd
+            .named_tunnel_name_with(defaults)
+            .expect("named tunnel has a name after unique_named_names");
+        let remove = cmd
+            .tunnel
+            .as_ref()
+            .and_then(|t| t.remove_existing)
+            .or(defaults.remove_existing)
+            .unwrap_or(false);
+        let sess = tunnel::setup_named(runtime, &name, local, public, remove)?;
+        let sibling = Command {
+            run: tunnel::named_run_command(&sess),
+            name: Some(cmd.sibling_prefix(defaults)),
+            color: Some(cmd.sibling_color(defaults)),
+            ..Command::default()
+        };
+        Ok(Some((sibling, Some(sess))))
+    } else {
+        let sibling = Command {
+            run: tunnel::quick_run_command(&binary, local),
+            name: Some(cmd.sibling_prefix(defaults)),
+            color: Some(cmd.sibling_color(defaults)),
+            ..Command::default()
+        };
+        Ok(Some((sibling, None)))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::types::EnvValue;
-    use std::collections::BTreeMap;
-    use std::path::PathBuf;
-
-    fn session() -> TunnelSession {
-        TunnelSession {
-            config_dir: PathBuf::from("/tmp"),
-            tunnel_name: "stackrun".into(),
-            tunnel_id: "id".into(),
-            ingress: vec![],
-            token: "tok".into(),
-            binary: "cloudflared".into(),
-        }
-    }
+    use crate::config::types::CommandTunnel;
 
     #[test]
-    fn tunnel_command_defaults_name_and_cyan() {
-        let cmd = tunnel_command(&session(), None);
-        assert_eq!(cmd.command, "cloudflared tunnel run stackrun");
-        assert_eq!(cmd.name.as_deref(), Some("Tunnel"));
-        assert_eq!(cmd.prefix_color.as_deref(), Some("cyan"));
-        assert!(cmd.cwd.is_none());
-        assert!(cmd.env.is_none());
-    }
-
-    #[test]
-    fn tunnel_command_uses_command_options() {
-        let mut env = BTreeMap::new();
-        env.insert("K".into(), EnvValue::String("v".into()));
-        let opts = TunnelCommandOptions {
-            name: Some("tunnel".into()),
-            prefix_color: Some("magenta".into()),
-            cwd: Some("/work".into()),
-            env: Some(env),
-            ..TunnelCommandOptions::default()
+    fn named_sibling_defaults_prefix_not_command_name() {
+        let defaults = crate::config::types::TunnelDefaults::default();
+        let cmd = Command {
+            run: "echo".into(),
+            name: Some("api".into()),
+            color: Some("green".into()),
+            tunnel: Some(CommandTunnel {
+                local: Some("http://127.0.0.1:4000".into()),
+                public: Some("https://api.example.dev".into()),
+                ..CommandTunnel::default()
+            }),
+            ..Command::default()
         };
-        let cmd = tunnel_command(&session(), Some(&opts));
-        assert_eq!(cmd.name.as_deref(), Some("tunnel"));
-        assert_eq!(cmd.prefix_color.as_deref(), Some("magenta"));
-        assert_eq!(cmd.cwd.as_deref(), Some("/work"));
+        assert_eq!(cmd.named_tunnel_name().as_deref(), Some("api"));
+        assert_eq!(cmd.sibling_prefix(&defaults), "Tunnel");
+        assert_eq!(cmd.sibling_color(&defaults), "cyan");
         assert_eq!(
-            cmd.env.as_ref().unwrap().get("K").unwrap().as_env_string(),
-            Some("v".into())
+            tunnel::quick_run_command("cloudflared", "http://127.0.0.1:3000"),
+            "cloudflared tunnel --url http://127.0.0.1:3000"
+        );
+    }
+
+    #[test]
+    fn sibling_prefix_and_resource_resolve() {
+        let defaults = crate::config::types::TunnelDefaults {
+            prefix: Some("tunnel".into()),
+            color: Some("cyan".into()),
+            resource: Some("bugpin".into()),
+            ..crate::config::types::TunnelDefaults::default()
+        };
+        let cmd = Command {
+            run: "echo".into(),
+            name: Some("nuxt".into()),
+            color: Some("green".into()),
+            tunnel: Some(CommandTunnel {
+                local: Some("http://127.0.0.1:3000".into()),
+                public: Some("https://bugpin.example.dev".into()),
+                ..CommandTunnel::default()
+            }),
+            ..Command::default()
+        };
+        assert_eq!(cmd.sibling_prefix(&defaults), "tunnel");
+        assert_eq!(cmd.sibling_color(&defaults), "cyan");
+        assert_eq!(
+            cmd.named_tunnel_name_with(&defaults).as_deref(),
+            Some("bugpin")
         );
     }
 }

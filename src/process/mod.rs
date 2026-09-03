@@ -100,7 +100,7 @@ fn spawn_one(
             n
         }
     };
-    let color = conc_opts.resolve_prefix_color(spec.prefix_color.as_deref(), index);
+    let color = conc_opts.resolve_prefix_color(spec.color.as_deref(), index);
     let failed = Arc::clone(failed);
     let shutting_down = Arc::clone(shutting_down);
     let children = Arc::clone(children);
@@ -162,7 +162,7 @@ fn run_command(
     handle_input: bool,
     tunnel_enabled: bool,
 ) -> Result<u8, Error> {
-    let mut cmd = shell_command(&spec.command);
+    let mut cmd = shell_command(&spec.run);
     if let Some(cwd) = &spec.cwd {
         cmd.current_dir(cwd);
     }
@@ -341,9 +341,12 @@ mod tests {
         let mut tunnel_env = BTreeMap::new();
         tunnel_env.insert("FOO".into(), EnvValue::String("tun".into()));
         let spec = Command {
-            command: "echo".into(),
+            run: "echo".into(),
             env: Some(env),
-            tunnel_env: Some(tunnel_env),
+            tunnel: Some(crate::config::types::CommandTunnel {
+                env: Some(tunnel_env),
+                ..crate::config::types::CommandTunnel::default()
+            }),
             ..Command::default()
         };
         assert_eq!(spec.effective_env(false).get("FOO").unwrap(), "base");
@@ -353,7 +356,7 @@ mod tests {
     #[test]
     fn auto_prefix_cycles() {
         let opts = ProcessOptions {
-            prefix_colors: Some(crate::config::types::PrefixColors::Named("auto".into())),
+            colors: Some(crate::config::types::PrefixColors::Named("auto".into())),
             ..ProcessOptions::default()
         };
         assert_eq!(opts.resolve_prefix_color(None, 0).as_deref(), Some("cyan"));
@@ -362,7 +365,7 @@ mod tests {
             Some("green")
         );
         let off = ProcessOptions {
-            prefix_colors: Some(crate::config::types::PrefixColors::Flag(false)),
+            colors: Some(crate::config::types::PrefixColors::Flag(false)),
             ..ProcessOptions::default()
         };
         assert_eq!(off.resolve_prefix_color(None, 0), None);

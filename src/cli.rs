@@ -1,4 +1,14 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+
+/// How to resolve `jiti` when loading a JS/TS config.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
+pub enum JitiMode {
+    /// `node` + `import("jiti")` from the project directory only.
+    #[default]
+    Local,
+    /// After a local miss, retry with `npx -p jiti node ...`.
+    Npx,
+}
 
 /// Run multiple services with optional Cloudflare tunneling.
 #[derive(Debug, Parser)]
@@ -9,7 +19,7 @@ use clap::Parser;
     about = "Run multiple services with optional Cloudflare tunneling"
 )]
 pub struct Cli {
-    /// Path to config file (extension optional). Default matches Node/c12: `stack.config`.
+    /// Path to config file (extension optional). Default: `stack.config`.
     #[arg(short = 'c', long = "config")]
     pub config: Option<String>,
 
@@ -21,22 +31,25 @@ pub struct Cli {
     #[arg(short = 't', long = "tunnel")]
     pub tunnel: bool,
 
-    /// Print version and exit (Node `-V` / `--version` prints the version string).
+    /// Print version and exit.
     #[arg(short = 'V', long = "version")]
     pub print_version: bool,
 
     /// Run a single shell command without a config file.
-    ///
-    /// New in the Rust CLI. Node stackrun has no `--command` flag.
     #[arg(long = "command")]
     pub command: Option<String>,
 
     /// Load config and print effective options as JSON. Does not spawn
-    /// processes, tunnels, beforeCommands, or afterCommands.
+    /// processes, tunnels, before hooks, or after hooks.
     #[arg(long = "dry-run")]
     pub dry_run: bool,
 
-    /// Optional positional config path (`args._[0]` in the Node CLI).
+    /// Resolve jiti for JS/TS configs. `local` uses the project only.
+    /// `npx` retries via `npx -p jiti` (first run may need network).
+    #[arg(long = "jiti", env = "STACKRUN_JITI", value_enum, default_value_t = JitiMode::Local)]
+    pub jiti: JitiMode,
+
+    /// Optional positional config path.
     #[arg(value_name = "CONFIG")]
     pub config_positional: Option<String>,
 }
@@ -84,5 +97,18 @@ mod tests {
         let cli = Cli::parse_from(["stackrun", "--dry-run", "--command", "echo x"]);
         assert!(cli.dry_run);
         assert_eq!(cli.command.as_deref(), Some("echo x"));
+    }
+
+    #[test]
+    fn jiti_defaults_to_local() {
+        std::env::remove_var("STACKRUN_JITI");
+        let cli = Cli::parse_from(["stackrun"]);
+        assert_eq!(cli.jiti, JitiMode::Local);
+    }
+
+    #[test]
+    fn jiti_npx_flag_parses() {
+        let cli = Cli::parse_from(["stackrun", "--jiti", "npx"]);
+        assert_eq!(cli.jiti, JitiMode::Npx);
     }
 }
