@@ -8,11 +8,11 @@ authors = ["Jasen Michael"]
 repository = "https://github.com/jasenmichael/stackrun"
 homepage = "https://github.com/jasenmichael/stackrun"
 documentation = "https://github.com/jasenmichael/stackrun#readme"
-description = "Run multiple services with optional Cloudflare tunneling"
+description = "Run multiple local services with optional Cloudflare tunnels, including stable HTTPS hosts for OAuth callback URLs"
 readme = "README.md"
 keywords = ["cli", "process", "concurrent", "cloudflare", "tunnel"]
 categories = ["command-line-utilities", "development-tools"]
-exclude = ["graphify-out/", "site/", "scripts/pages/"]
+exclude = ["graphify-out/", "site/", "website/"]
 
 [[bin]]
 name = "stackrun"

@@ -220,7 +220,7 @@ mod tests {
             ..Command::default()
         };
         assert_eq!(cmd.named_tunnel_name().as_deref(), Some("api"));
-        assert_eq!(cmd.sibling_prefix(&defaults), "Tunnel");
+        assert_eq!(cmd.sibling_prefix(&defaults), "tunnel");
         assert_eq!(cmd.sibling_color(&defaults), "cyan");
         assert_eq!(
             tunnel::quick_run_command("cloudflared", "http://127.0.0.1:3000"),
@@ -320,7 +320,7 @@ mod tests {
         };
         assert_eq!(
             logging::format_host_line(&tunnel_start_line(&cmd, &defaults), false),
-            "[stackrun] Starting tunnel sibling [Tunnel] for web at http://127.0.0.1:3000 (public host is a new *.trycloudflare.com)"
+            "[stackrun] Starting tunnel sibling [tunnel] for web at http://127.0.0.1:3000 (public host is a new *.trycloudflare.com)"
         );
     }
 }

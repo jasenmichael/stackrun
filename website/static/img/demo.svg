@@ -13,8 +13,8 @@
     <tspan x="28" dy="22"><tspan fill="#7eb8da">[before]</tspan> Container db  Started</tspan>
     <tspan x="28" dy="22"><tspan fill="#3dd68c">[api]</tspan> ready on http://127.0.0.1:4000</tspan>
     <tspan x="28" dy="22"><tspan fill="#6ea8fe">[web]</tspan> Local:   http://127.0.0.1:3000</tspan>
-    <tspan x="28" dy="22"><tspan fill="#7eb8da">[Tunnel]</tspan> Your quick Tunnel has been created!</tspan>
-    <tspan x="28" dy="22"><tspan fill="#7eb8da">[Tunnel]</tspan> https://random-words-here.trycloudflare.com</tspan>
+    <tspan x="28" dy="22"><tspan fill="#7eb8da">[tunnel]</tspan> Your quick Tunnel has been created!</tspan>
+    <tspan x="28" dy="22"><tspan fill="#7eb8da">[tunnel]</tspan> https://random-words-here.trycloudflare.com</tspan>
     <tspan x="28" dy="22" fill="#e8e6e3">^C</tspan>
     <tspan x="28" dy="22"><tspan fill="#e3b341">[web]</tspan> stopped</tspan>
     <tspan x="28" dy="22"><tspan fill="#e3b341">[api]</tspan> stopped</tspan>

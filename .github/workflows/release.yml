@@ -29,9 +29,13 @@ jobs:
         env:
           STACKRUN_BINARY: ${{ github.workspace }}/target/debug/stackrun
           STACKRUN_SKIP_DOWNLOAD: "1"
-      - run: bash -n scripts/install.sh && bash -n scripts/generate-pages.sh
-      - run: scripts/generate-pages.sh 1.0.0 /tmp/stackrun-pages
-      - run: test -f /tmp/stackrun-pages/index.html && test -f /tmp/stackrun-pages/install.sh
+      - run: bash -n scripts/install.sh
+      - name: Build website
+        working-directory: website
+        run: |
+          npm ci
+          npm run build
+      - run: test -f website/build/install.sh
 
   version-changed:
     needs: test
@@ -55,34 +59,6 @@ jobs:
             echo "should_publish=false" >> "$GITHUB_OUTPUT"
           fi
           echo "crate=$version last_tag=${last:-none}"
-
-  pages:
-    needs: [test, version-changed]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - run: npm ci
-      - name: Generate Pages
-        run: ./scripts/generate-pages.sh "${{ needs.version-changed.outputs.version }}" site
-      - name: Push docs branch
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          version="${{ needs.version-changed.outputs.version }}"
-          origin="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          work=$(mktemp -d)
-          git -C "$work" init
-          git -C "$work" checkout -b docs
-          cp -a site/. "$work/"
-          git -C "$work" config user.name "github-actions[bot]"
-          git -C "$work" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C "$work" add -A
-          git -C "$work" commit -m "docs: GitHub Pages for v${version}"
-          git -C "$work" push --force "$origin" docs
 
   publish:
     if: needs.version-changed.outputs.should_publish == 'true'
@@ -184,3 +160,11 @@ jobs:
         run: |
           set -euo pipefail
           npm publish ./npm --access public
+
+  website:
+    if: needs.version-changed.outputs.should_publish == 'true'
+    needs: [test, version-changed, ship]
+    uses: ./.github/workflows/docs.yml
+    secrets: inherit
+    permissions:
+      contents: write

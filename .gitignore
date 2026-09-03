@@ -1,5 +1,7 @@
 /target
 /site
+website/build
+website/.docusaurus
 node_modules/
 *.tgz
 **/*.rs.bk
@@ -16,5 +18,4 @@ DESIGN.md
 .editorconfig
 PLAN.md
 SPEC.md
-STACK.md
 DESIGN.md

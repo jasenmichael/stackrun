@@ -1,7 +1,7 @@
 {
   "name": "stackrun",
   "version": "1.0.0",
-  "description": "Run multiple services with optional Cloudflare tunneling",
+  "description": "Run multiple local services with optional Cloudflare tunnels, including stable HTTPS hosts for OAuth callback URLs",
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -75,7 +75,7 @@ pub enum TunnelSetting {
 pub struct TunnelDefaults {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remove_existing: Option<bool>,
-    /// Sibling log prefix. Default `Tunnel`.
+    /// Sibling log prefix. Default `tunnel`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prefix: Option<String>,
     /// Sibling prefix color. Default `cyan`.
@@ -86,7 +86,7 @@ pub struct TunnelDefaults {
     pub resource: Option<String>,
 }
 
-const DEFAULT_SIBLING_PREFIX: &str = "Tunnel";
+const DEFAULT_SIBLING_PREFIX: &str = "tunnel";
 const DEFAULT_SIBLING_COLOR: &str = "cyan";
 
 fn nonempty_owned(value: Option<String>) -> Option<String> {
@@ -214,7 +214,7 @@ pub struct CommandTunnel {
     /// Cloudflare object name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource: Option<String>,
-    /// Sibling log prefix. Falls back to stack `tunnel.prefix`, then `Tunnel`.
+    /// Sibling log prefix. Falls back to stack `tunnel.prefix`, then `tunnel`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prefix: Option<String>,
     /// Sibling prefix color. Falls back to stack `tunnel.color`, then `cyan`.
@@ -361,7 +361,7 @@ mod tests {
             ..Command::default()
         };
         let defaults = TunnelDefaults::default();
-        assert_eq!(cmd.sibling_prefix(&defaults), "Tunnel");
+        assert_eq!(cmd.sibling_prefix(&defaults), "tunnel");
         assert_eq!(cmd.sibling_color(&defaults), "cyan");
     }
 

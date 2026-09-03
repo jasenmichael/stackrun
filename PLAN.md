@@ -14,7 +14,7 @@
 | 6 | Tunnel manager | Done — per-command quick or named `cloudflared` siblings; no API token / REST DNS |
 | 7 | CLI | clap: `--config`, `--json`, `--tunnel`, `--command`, `--dry-run`, `--jiti` |
 | 8 | Tests | Native config, process lifecycle, mocked tunnel setup, optional JS/TS, CLI flags + config formats via `--dry-run` |
-| 9 | Packaging | Done — one npm `stackrun` (download GH binary); native six-target release; Pages from README |
+| 9 | Packaging | Done — one npm `stackrun` (download GH binary); native six-target release; Docusaurus Pages |
 
 ## Architecture
 
@@ -97,7 +97,7 @@ See `STACK.md`. Short why:
 - One npm package `stackrun`: `bin` + `import { stackrun }`. Install downloads the matching GitHub Release binary. No `@jasenmichael/stackrun-*` packages.
 - Publish from `release.yml` when the crate version is newer than the last tag. No laptop `npm publish` / `cargo publish`.
 - Dynamic docs: automd + changelogen in the release PR (no tag from the laptop).
-- GitHub Pages on every `main` merge: `scripts/generate-pages.sh` renders README to `index.html` and copies `install.sh` + demo assets. Curl install: `https://jasenmichael.github.io/stackrun/install.sh`.
+- GitHub Pages: Docusaurus `website/` publishes to `gh-pages` on every `main` push and on each release. Curl install: `https://jasenmichael.github.io/stackrun/install.sh`.
 - Post-1.0 ideas: [ROADMAP.md](ROADMAP.md).
 
 ## Verification

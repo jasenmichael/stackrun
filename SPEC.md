@@ -1,10 +1,10 @@
 # SPEC.md — Stackrun product behavior
 
-This file is the product-behavior contract. If it disagrees with `STACK.md`, this file wins on behavior.
+This file is the product-behavior contract.
 
 ## What Stackrun is
 
-Stackrun is a process-orchestration CLI. It runs one or more arbitrary OS commands concurrently, with optional Cloudflare tunneling, lifecycle hooks, and prefixed log output.
+Stackrun is a process-orchestration CLI. It runs one or more arbitrary OS commands concurrently, with optional Cloudflare tunneling, lifecycle hooks, and prefixed log output. Named tunnels exist so local OAuth, OIDC, and SSO flows can use a registered HTTPS callback URL that reaches processes on the developer machine.
 
 It is not tied to a single application language. Commands are opaque argv/shell strings executed as child processes.
 
@@ -142,7 +142,7 @@ Only these keys load. Unknown keys are ignored.
 | `public` | string | Public hostname. When set: named tunnel + `route dns`. When omitted: quick tunnel (`*.trycloudflare.com`). |
 | `env` | same as `env` | Merged over command `env` when tunneling is on. |
 | `resource` | string | Named-tunnel Cloudflare object name. Else stack `tunnel.resource`, else `command.name`. Must be unique among named tunnels. |
-| `prefix` | string | Cloudflared sibling log prefix. Else stack `tunnel.prefix`, else `Tunnel`. |
+| `prefix` | string | Cloudflared sibling log prefix. Else stack `tunnel.prefix`, else `tunnel`. |
 | `color` | string | Sibling prefix color. Else stack `tunnel.color`, else `cyan`. |
 | `removeExisting` | boolean | Per-command override of stack `tunnel.removeExisting`. |
 
@@ -165,7 +165,7 @@ When tunneling is on: `env = { ...env, ...tunnel.env }`. When not: command `env`
 4. For each command with `tunnel.local`:
    - **Quick** (no `public`): spawn `{cloudflared} tunnel --url {local}` as a prefixed sibling. No login, no create, no DNS.
    - **Named** (`public` set): require `cert.pem`; `tunnel create` + `route dns` [+ `--overwrite-dns` when `removeExisting`] + spawn `{cloudflared} tunnel run --url {local} {resource}`. Resource: command `tunnel.resource`, else stack `tunnel.resource`, else `command.name`.
-   - Sibling `[name]` / color: command `tunnel.prefix` / `tunnel.color`, else stack defaults, else `Tunnel` + `cyan`. Do not copy the user command’s name or color.
+   - Sibling `[name]` / color: command `tunnel.prefix` / `tunnel.color`, else stack defaults, else `tunnel` + `cyan`. Do not copy the user command’s name or color.
    - After setup succeeds, print one host start line per user command (`[stackrun] Starting [name] {run}` plus ` in {cwd}` when `cwd` is set) and one per tunnel sibling (`[stackrun] Starting tunnel sibling [prefix] …`). Named: include `local` and `public`. Quick: include `local` and that the public host is a new `*.trycloudflare.com` (do not parse or wait on cloudflared stdout).
 5. Spawn user commands concurrently (`sh -c` / `cmd /c`). `tunnel.env` overlays `env` when tunneling is on. `handleInput: true` inherits stdin; `false` uses null stdin. Child stdout/stderr lines are prefixed `[name]<space>` (name already sliced to `prefixLength`). `color` / `colors: auto` color only `[name]`; the line body is uncolored. `colors: false` prints `[name]` with no ANSI. Stderr lines still go to stderr. Every child including each cloudflared is prefix-logged. Do not wait-parse trycloudflare URLs. Stackrun-owned sentences (config loaded, tunneling on/off, hooks, start lines, command exited/stopped/errored, completed, errors) use `[stackrun]<space>` the same way: color only the `stackrun` name (letter-rainbow); body uncolored.
 6. `after`: sequential shell. **Always runs** after commands have exited (success, failure, or Ctrl+C), if any `after` entries were set. Empty / omitted `after` is a no-op and does not change the exit code. **Ctrl+C** stops every command (Unix process groups), then `after` runs, then the process exits **0** unless a command had already failed on its own.

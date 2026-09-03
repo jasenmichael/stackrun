@@ -20,4 +20,6 @@ Rust should keep this information architecture: Stackrun logs vs prefixed child 
 - No HTML dashboard and no product web UI.
 - No interactive config wizard in the first Rust phases.
 
-GitHub Pages (`docs` branch, generated at publish) is an install landing page plus `install.sh`, not a control surface.
+GitHub Pages (`gh-pages` branch, Docusaurus `website/build` only) is the docs site plus `install.sh`, not a control surface.
+
+Source is `website/`. Publish on push to `main` (no version bump) and again on each release. Install methods on the site use Docusaurus Tabs (Curl default). README keeps curl / crates / npm headings plus the hero example and demo image.

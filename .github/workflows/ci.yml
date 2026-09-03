@@ -60,11 +60,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: bash -n scripts/install.sh && bash -n scripts/generate-pages.sh
-      - run: scripts/generate-pages.sh 1.0.0 /tmp/stackrun-pages
-      - run: test -f /tmp/stackrun-pages/install.sh && test -f /tmp/stackrun-pages/.nojekyll
-      - run: test -f /tmp/stackrun-pages/demo.cast && test -f /tmp/stackrun-pages/demo.svg
-      - run: grep -q 'v1.0.0' /tmp/stackrun-pages/index.html
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: bash -n scripts/install.sh
+      - name: Build website
+        working-directory: website
+        run: |
+          npm ci
+          npm run build
+      - run: test -f website/build/install.sh
       - run: STACKRUN_VERSION=1.0.0 scripts/install.sh --dry-run
 
   audit:

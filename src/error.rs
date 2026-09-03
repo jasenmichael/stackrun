@@ -53,7 +53,11 @@ pub enum Error {
          Install (pick one), then retry:\n\
            macOS:   brew install cloudflared\n\
            Windows: winget install Cloudflare.cloudflared\n\
-           Linux:   https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/\n\
+           Debian:  sudo apt-get install cloudflared  (Cloudflare apt repo)\n\
+           RHEL:    sudo yum install cloudflared\n\
+           Arch:    sudo pacman -Syu cloudflared\n\
+           Also:    https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/\n\
+                    https://github.com/cloudflare/cloudflared/releases\n\
          \n\
          Quick tunnels (tunnel.local only) need the binary only.\n\
          Named tunnels (tunnel.public set) also need: cloudflared tunnel login"

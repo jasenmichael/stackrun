@@ -1,0 +1,131 @@
+---
+id: install
+sidebar_position: 2
+title: Installation
+---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+<Tabs groupId="install" queryString>
+  <TabItem value="curl" label="curl" default>
+
+No Rust or Node. The script detects OS/arch, downloads the matching archive, checks `SHA256SUMS`, and puts `stackrun` in `~/.local/bin`.
+
+```sh
+curl -fsSL https://jasenmichael.github.io/stackrun/install.sh | sh
+```
+
+Pin a version or install directory:
+
+```sh
+curl -fsSL https://jasenmichael.github.io/stackrun/install.sh | STACKRUN_VERSION=1.0.0 sh
+curl -fsSL https://jasenmichael.github.io/stackrun/install.sh | STACKRUN_INSTALL=/usr/local/bin sh
+```
+
+Manual install: pick an archive from [GitHub Releases](https://github.com/jasenmichael/stackrun/releases). Names are `stackrun-v<version>-<target>.tar.gz` (Unix) or `.zip` (Windows).
+
+Targets: Linux x64/arm64 (`*-unknown-linux-gnu`), macOS Intel/Apple Silicon (`*-apple-darwin`), Windows x64/arm64 (`*-pc-windows-msvc`).
+
+```sh
+tar -xzf stackrun-v1.0.0-x86_64-unknown-linux-gnu.tar.gz
+sudo mv stackrun-v1.0.0-x86_64-unknown-linux-gnu/stackrun /usr/local/bin/
+sha256sum -c SHA256SUMS
+```
+
+  </TabItem>
+  <TabItem value="wget" label="wget">
+
+No Rust or Node. Same script as curl. `wget` fetches it; `sh` runs it.
+
+```sh
+wget -qO- https://jasenmichael.github.io/stackrun/install.sh | sh
+```
+
+Pin a version or install directory:
+
+```sh
+wget -qO- https://jasenmichael.github.io/stackrun/install.sh | STACKRUN_VERSION=1.0.0 sh
+wget -qO- https://jasenmichael.github.io/stackrun/install.sh | STACKRUN_INSTALL=/usr/local/bin sh
+```
+
+Manual install: pick an archive from [GitHub Releases](https://github.com/jasenmichael/stackrun/releases). Names are `stackrun-v<version>-<target>.tar.gz` (Unix) or `.zip` (Windows).
+
+Targets: Linux x64/arm64 (`*-unknown-linux-gnu`), macOS Intel/Apple Silicon (`*-apple-darwin`), Windows x64/arm64 (`*-pc-windows-msvc`).
+
+```sh
+tar -xzf stackrun-v1.0.0-x86_64-unknown-linux-gnu.tar.gz
+sudo mv stackrun-v1.0.0-x86_64-unknown-linux-gnu/stackrun /usr/local/bin/
+sha256sum -c SHA256SUMS
+```
+
+  </TabItem>
+  <TabItem value="crates" label="crates.io">
+
+Needs `cargo` because cargo builds the crate.
+
+```sh
+cargo install stackrun
+```
+
+  </TabItem>
+  <TabItem value="npm" label="npm">
+
+Needs Node. One npm package (`stackrun`). Install downloads the matching GitHub Release binary for this OS/arch.
+
+```sh
+npx stackrun
+npm i -g stackrun
+npm i -D stackrun
+npm install stackrun
+```
+
+  </TabItem>
+  <TabItem value="pnpm" label="pnpm">
+
+Needs Node. Same npm package (`stackrun`); install downloads the matching GitHub Release binary.
+
+```sh
+pnpm add stackrun
+pnpm dlx stackrun
+```
+
+  </TabItem>
+  <TabItem value="bun" label="bun">
+
+Needs Node (or Bun). Same npm package (`stackrun`); install downloads the matching GitHub Release binary.
+
+```sh
+bun install stackrun
+bunx stackrun
+```
+
+  </TabItem>
+  <TabItem value="yarn" label="yarn">
+
+Needs Node. Same npm package (`stackrun`); install downloads the matching GitHub Release binary.
+
+```sh
+yarn add stackrun
+```
+
+  </TabItem>
+  <TabItem value="source" label="from source">
+
+Needs a [Rust](https://rustup.rs/) stable toolchain (`rust-toolchain.toml` pins `stable`). Builds this repo, not crates.io.
+
+```sh
+git clone https://github.com/jasenmichael/stackrun
+cd stackrun
+cargo install --path .
+```
+
+Run from the repo without installing:
+
+```sh
+cargo run -- --help
+cargo build --release
+```
+
+  </TabItem>
+</Tabs>

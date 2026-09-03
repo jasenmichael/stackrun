@@ -1,0 +1,31 @@
+---
+id: tunnels
+sidebar_position: 6
+title: Tunnels
+---
+
+A command with no `tunnel` key has no `cloudflared` sibling.
+
+Auth providers (OAuth, OIDC, SSO) only redirect to callback URLs you registered. Localhost is often blocked or HTTP-only; the provider also cannot reach `127.0.0.1` from the internet. Set `public` to a hostname on your zone so the local command has a stable HTTPS origin that matches the dashboard. Quick tunnels change host every run, so they are a poor fit for a fixed callback.
+
+| Field | Description |
+| --- | --- |
+| `local` | Local origin (`http://127.0.0.1:4000`). |
+| `public` | Public hostname. Set this for a named tunnel + `route dns`. Omit it for a quick tunnel. |
+| `env` | Merged over `env` when tunneling is on. |
+| `resource` | Cloudflare object name. Else stack `tunnel.resource`, else `command.name`. Unique among named tunnels. |
+| `prefix` | Cloudflared log prefix. Else stack `tunnel.prefix`, else `tunnel`. |
+| `color` | Cloudflared prefix color. Else stack `tunnel.color`, else `cyan`. |
+| `removeExisting` | Per-command override of stack `tunnel.removeExisting`. |
+
+**Quick** (`local` only): `cloudflared tunnel --url <local>` opens a random `*.trycloudflare.com` host. No login, no token, no DNS.
+
+**Named** (`local` + `public`): `cloudflared tunnel create` + `route dns` + `tunnel run --url <local> <resource>`.
+
+Named tunnels need `cert.pem` from `cloudflared tunnel login`. Stack `tunnel.removeExisting: true` deletes an existing name and overwrites DNS.
+
+Cleanup deletes the tunnel and local creds. It does not delete the CNAME. A leftover host shows Cloudflare `1016`.
+
+`--tunnel` / `TUNNEL=true` force tunnels on. `tunnel: false` at stack level runs commands without `cloudflared` and without `tunnel.env`.
+
+`--tunnel` with zero `local` exits 1 before hooks. If tunneling is on and `cloudflared` is missing (or named tunnels lack `cert.pem`), stackrun exits before hooks and prints install + login steps.

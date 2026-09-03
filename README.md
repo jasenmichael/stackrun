@@ -2,12 +2,19 @@
 
 [![CI](https://github.com/jasenmichael/stackrun/actions/workflows/ci.yml/badge.svg)](https://github.com/jasenmichael/stackrun/actions/workflows/ci.yml)
 
-<!-- automd:badges license -->
+<!-- automd:badges license name="stackrun" -->
+
+[![npm version](https://img.shields.io/npm/v/stackrun)](https://npmjs.com/package/stackrun)
+[![npm downloads](https://img.shields.io/npm/dm/stackrun)](https://npm.chart.dev/stackrun)
+[![license](https://img.shields.io/github/license/jasenmichael/stackrun)](https://github.com/jasenmichael/stackrun/blob/main/LICENSE)
+
 <!-- /automd -->
 
 stackrun is a process-orchestration CLI. It is an alternative to running a local stack with [concurrently](https://www.npmjs.com/package/concurrently), [npm-run-all2](https://www.npmjs.com/package/npm-run-all2), [Wireit](https://github.com/google/wireit), or native shell operators (`&`, `wait`, `&&`).
 
 Those tools stay inside npm scripts or a single shell. stackrun is a standalone binary: any language, prefixed logs, `before` / `after` hooks, and optional Cloudflare tunnels.
+
+Tunnels are built for local authentication as much as for sharing a stack. OAuth, OIDC, and SSO providers redirect the browser only to callback URLs you registered — exact scheme, host, and path. Many reject `http://localhost`, require HTTPS, or cannot reach a process that exists only on loopback. A named tunnel (`public`) gives the local web or API a stable `https://…` host that matches the dashboard entry, so login completes against the processes on your laptop. You keep one callback URL instead of deploying to test auth, or re-registering a new `*.trycloudflare.com` host every run. Quick tunnels are fine for a one-off share; named hosts are what you want when the callback is fixed.
 
 Commands are opaque processes. Python, Node, Go, shell, or any executable works. Node evaluates JS/TS config files and, in the npm package, shims `stackrun` / `import { stackrun }`.
 
@@ -20,9 +27,8 @@ Commands are opaque processes. Python, Node, Go, shell, or any executable works.
 - Optional JS/TS config (`node` plus local `jiti`, or `--jiti npx`)
 - Lifecycle hooks (`before` / `after`)
 - Per-command `env`, `cwd`, and `tunnel.env`
-- One-off runs with `--command` (no config file)
 - `--dry-run` prints the loaded config as JSON
-- Per-command Cloudflare tunnels: quick (`*.trycloudflare.com`) or named (your zone)
+- Per-command Cloudflare tunnels: quick (`*.trycloudflare.com`) or named (your zone) — named hosts fit OAuth/OIDC callback URLs that must match a registered HTTPS origin
 
 ## Requirements
 
@@ -37,8 +43,19 @@ Install when you use tunnels:
 brew install cloudflared
 # Windows
 winget install Cloudflare.cloudflared
-# Linux: see Cloudflare's install page
+# Debian / Ubuntu
+sudo mkdir -p --mode=0755 /usr/share/keyrings
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
+sudo apt-get update && sudo apt-get install cloudflared
+# RHEL / Fedora
+curl -fsSl https://pkg.cloudflare.com/cloudflared.repo | sudo tee /etc/yum.repos.d/cloudflared.repo
+sudo yum update && sudo yum install cloudflared
+# Arch
+sudo pacman -Syu cloudflared
 ```
+
+Other OS/arch (binaries, `.deb`, `.rpm`, Docker, Windows MSI): [Cloudflare downloads](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/) or [GitHub Releases](https://github.com/cloudflare/cloudflared/releases).
 
 Quick tunnels (`tunnel.local` only) need the binary. Named tunnels (`public` set) also need one login: `cloudflared tunnel login`. No API token.
 
@@ -47,6 +64,14 @@ Node is needed only for the npm package (`npx`, `npm i`, or `import { stackrun }
 A Rust toolchain is needed only when [building from source](#from-source).
 
 ## Installation
+
+GitHub shows every method below. The [docs site](https://jasenmichael.github.io/stackrun/install) uses tabs.
+
+| Method | Needs | Command |
+| --- | --- | --- |
+| curl | none | `curl -fsSL https://jasenmichael.github.io/stackrun/install.sh \| sh` |
+| crates.io | `cargo` | `cargo install stackrun` |
+| npm / pnpm / bun / yarn | Node | `npx stackrun` |
 
 ### GitHub Releases
 
@@ -63,7 +88,7 @@ curl -fsSL https://jasenmichael.github.io/stackrun/install.sh | STACKRUN_VERSION
 curl -fsSL https://jasenmichael.github.io/stackrun/install.sh | STACKRUN_INSTALL=/usr/local/bin sh
 ```
 
-The script and landing page live on GitHub Pages (`docs` branch): https://jasenmichael.github.io/stackrun/
+The script and landing page live on GitHub Pages: https://jasenmichael.github.io/stackrun/
 
 Manual install: pick an archive from [GitHub Releases](https://github.com/jasenmichael/stackrun/releases). Names are `stackrun-v<version>-<target>.tar.gz` (Unix) or `.zip` (Windows).
 
@@ -96,10 +121,43 @@ npm i -g stackrun
 npm i -D stackrun   # then ./node_modules/.bin/stackrun
 ```
 
-<!-- automd:pm-install name="stackrun" -->
+<!-- automd:pm-install name="stackrun" auto=false -->
+
+```sh
+# npm
+npm install stackrun
+
+# yarn
+yarn add stackrun
+
+# pnpm
+pnpm add stackrun
+
+# bun
+bun install stackrun
+
+# deno
+deno install npm:stackrun
+```
+
 <!-- /automd -->
 
 <!-- automd:pm-x name="stackrun" -->
+
+```sh
+# npm
+npx stackrun
+
+# pnpm
+pnpm dlx stackrun
+
+# bun
+bunx stackrun
+
+# deno
+deno run -A npm:stackrun
+```
+
 <!-- /automd -->
 
 ### From source
@@ -114,29 +172,16 @@ cargo install --path .
 
 This puts `stackrun` on your PATH.
 
-Or run from the repo without installing:
-
-```sh
-cargo run -- --help
-```
-
-A release build writes `target/release/stackrun`:
-
-```sh
-cargo build --release
-```
-
 ## Quick start
 
 ```sh
 stackrun
 stackrun --config ./stack.config.yaml
-stackrun --command "python server.py"
 ```
 
 One stack: start a Docker DB, run api + web, expose web, tear the DB down.
 
-**Quick tunnel** (no `public`). URL is a new `https://<id>.trycloudflare.com` each run, in the `[Tunnel]` log. Needs `cloudflared`. No login.
+**Quick tunnel** (no `public`). URL is a new `https://<id>.trycloudflare.com` each run, in the `[tunnel]` log. Needs `cloudflared`. No login.
 
 ```yaml
 # stack.config.yaml
@@ -160,9 +205,9 @@ commands:
       local: http://127.0.0.1:3000
 ```
 
-![stackrun demo](scripts/pages/demo.svg)
+![stackrun demo](website/static/img/demo.gif)
 
-[Play this recording](https://jasenmichael.github.io/stackrun/#demo) on the docs site.
+[Play this recording](https://jasenmichael.github.io/stackrun/) on the docs site.
 
 **Named tunnel** (add `public`). URL is exactly that hostname. Needs `cloudflared tunnel login` and the name on your zone.
 
@@ -185,17 +230,32 @@ Put the file in the project root and run `stackrun`.
 The npm package exports `stackrun` and `defineStackrunConfig`. Both spawn the native binary. They do not run the stack in Node.
 
 <!-- automd:jsimport name="stackrun" imports="stackrun,defineStackrunConfig" -->
+
+**ESM** (Node.js, Bun, Deno)
+
+```js
+import { stackrun, defineStackrunConfig } from "stackrun";
+```
+
 <!-- /automd -->
 
 ```ts
 import { stackrun, defineStackrunConfig } from "stackrun";
 
 export default defineStackrunConfig({
-  commands: [{ name: "api", run: "npm run dev", cwd: "./api" }],
+  commands: [
+    { name: "api", run: "npm run dev", cwd: "./api" },
+    { name: "web", run: "npm run dev", cwd: "./web" },
+  ],
 });
 
 await stackrun();
-await stackrun({ commands: [{ name: "api", run: "npm run dev" }] });
+await stackrun({
+  commands: [
+    { name: "api", run: "npm run dev", cwd: "./api" },
+    { name: "web", run: "npm run dev", cwd: "./web" },
+  ],
+});
 ```
 
 ## How it works
@@ -240,14 +300,11 @@ Examples:
 stackrun
 stackrun --config ./stack.config.yaml
 stackrun custom.yaml
-stackrun --command "echo hello"
-stackrun --json '{"commands":[{"name":"hi","run":"echo hello"}]}'
 stackrun --tunnel --config ./stack.config.yaml
 stackrun --dry-run
-stackrun --dry-run --command "echo hello"
 ```
 
-`--command` replaces the `commands` list. `--json` is a JSON string, not a file path. Either flag is enough to run without a config file.
+`--json` is a JSON string overlay, not a file path.
 
 `--dry-run` prints:
 
@@ -310,7 +367,7 @@ Top-level keys:
 
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `commands` | array | `[]` | Required to run, unless `--command` or `--json` supplies them |
+| `commands` | array | `[]` | Required to run |
 | `before` | string array | `[]` | Sequential hooks before services. Failure aborts the run. |
 | `after` | string array | `[]` | Sequential hooks after commands have exited (ok, fail, or Ctrl+C). Empty/omitted is a no-op. |
 | `process` | object | see below | Process-manager options. |
@@ -365,7 +422,7 @@ A command with no `tunnel` key has no `cloudflared` sibling.
 | `public` | Public hostname. Set this for a named tunnel + `route dns`. Omit it for a quick tunnel. |
 | `env` | Merged over `env` when tunneling is on. |
 | `resource` | Cloudflare object name. Else stack `tunnel.resource`, else `command.name`. Unique among named tunnels. |
-| `prefix` | Cloudflared log prefix. Else stack `tunnel.prefix`, else `Tunnel`. |
+| `prefix` | Cloudflared log prefix. Else stack `tunnel.prefix`, else `tunnel`. |
 | `color` | Cloudflared prefix color. Else stack `tunnel.color`, else `cyan`. |
 | `removeExisting` | Per-command override of stack `tunnel.removeExisting`. |
 
@@ -407,7 +464,10 @@ Stackrun never runs `npm i` for you and never defaults to `npx`.
 
 ```ts
 export default {
-  commands: [{ name: "api", run: "npm run dev", cwd: "./api" }],
+  commands: [
+    { name: "api", run: "npm run dev", cwd: "./api" },
+    { name: "web", run: "npm run dev", cwd: "./web" },
+  ],
 };
 ```
 
@@ -448,6 +508,13 @@ Published under the [MIT](./LICENSE) license.
 Maintained by [@jasenmichael](https://github.com/jasenmichael).
 
 <!-- automd:contributors -->
+
+Made by [community](https://github.com/jasenmichael/stackrun/graphs/contributors) 💛
+<br><br>
+<a href="https://github.com/jasenmichael/stackrun/graphs/contributors">
+<img src="https://contrib.rocks/image?repo=jasenmichael/stackrun" />
+</a>
+
 <!-- /automd -->
 
 <!-- automd:with automd -->
