@@ -2,11 +2,9 @@
 
 This file is the product-behavior contract. If it disagrees with `STACK.md`, this file wins on behavior.
 
-Historical Node implementation lives on `main` (`src/cli.ts`, `src/index.ts`, `test/`). This branch is Rust-only: `src/` is the CLI. Match Node behavior unless a difference is listed under [Intentional Rust differences](#intentional-rust-differences) or [Open questions](#open-questions).
-
 ## What Stackrun is
 
-Stackrun is a process-orchestration CLI. It runs one or more arbitrary OS commands (Node, Python, Go, shell, or any executable) concurrently, with optional Cloudflare tunneling, lifecycle hooks, and prefixed log output.
+Stackrun is a process-orchestration CLI. It runs one or more arbitrary OS commands concurrently, with optional Cloudflare tunneling, lifecycle hooks, and prefixed log output.
 
 It is not tied to a single application language. Commands are opaque argv/shell strings executed as child processes.
 
@@ -17,74 +15,55 @@ It is not tied to a single application language. Commands are opaque argv/shell 
 | CLI binary | `src/main.rs` | Parse CLI, load config, run stack |
 | Library | `src/lib.rs` | Config, stack run, process, tunnel modules |
 
-Historical Node CLI (citty) is on `main` only.
-
 ## CLI
 
-### Flags (historical Node on `main`; Rust recreates these)
+### Flags
 
 | Flag | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `-c`, `--config` | string | `stack.config` | Config path. May omit extension. Passed to c12 as `configFile`. |
-| positional `[config]` | string | — | `args._[0]` used if `-c`/`--config` missing (citty default still supplies `stack.config`) |
-| `--json` | string | — | Documented as “input config as JSON”. **Not read by `run()` today.** Dead flag. |
-| `-t`, `--tunnel` | boolean | false | Sets `config.tunnelEnabled = true` |
-| `--dry-run` | boolean | false | Load config (same path as a real run) and print effective options as JSON. Does not spawn processes, tunnels, `beforeCommands`, or `afterCommands`. **Rust-only.** |
+| `-c`, `--config` | string | `stack.config` | Config path. May omit extension. |
+| positional `[config]` | string | — | Used if `-c` / `--config` is missing. Default is still `stack.config`. |
+| `--json` | string | — | JSON config overlay (highest data priority). |
+| `-t`, `--tunnel` | boolean | false | Force tunnels on. Abort before hooks if no command has `tunnel.local`. |
+| `--dry-run` | boolean | false | Load config (same path as a real run) and print effective options as JSON. Does not spawn processes, tunnels, `before`, or `after`. |
+| `--jiti` | `local` \| `npx` | `local` | JS/TS configs only. See [JS/TS config (jiti)](#jsts-config-jiti). Env: `STACKRUN_JITI`. |
+| `--command` | string | — | One-entry `commands` override. Does not require a config file. |
 | `-h`, `--help` | boolean | — | Show help |
-| `-V` / `--version` | boolean | — | Print crate version (`CARGO_PKG_VERSION`; Node used `package.json`) |
+| `-V` / `--version` | boolean | — | Print crate version (`CARGO_PKG_VERSION`) |
 
 ### Environment variables that affect CLI / runtime
 
 | Variable | Effect |
 | --- | --- |
 | `TUNNEL=true` | Same as `--tunnel` (exact string `"true"`) |
-| `CLOUDFLARE_TOKEN` | Default `cfTunnelConfig.cfToken`; also fallback at tunnel-enable time |
-| `CF_TOKEN` | Fallback token if `cfTunnelConfig.cfToken` is unset |
-| `CLOUDFLARE_TUNNEL_NAME` | Default tunnel name (`"stackrun"` if unset) |
-| `CF_TUNNEL_NAME` | Fallback tunnel name after config and `CLOUDFLARE_TUNNEL_NAME` |
-| `NODE_ENV` | c12 `envName` for `$development` / `$production` / `$test` / `$env` overlays |
-| `.env` (via c12 `dotenv: true`) | Loaded into `process.env` before config import; `${VAR}` / `$VAR` interpolation in the env file only; does not override already-set env vars; keys starting with `_` skipped. Native YAML/JSON/TOML values are not interpolated. JS/TS configs can read `process.env`. |
+| `NODE_ENV` | Selects `$<envName>` and `$env.<envName>` overlays (`$development` / `$production` / `$test` / …) |
+| `STACKRUN_JITI` | Same as `--jiti` (`local` or `npx`). JS/TS configs only. |
+| `.env` | Loaded into the process environment before config import; `${VAR}` / `$VAR` interpolation in the env file only; does not override already-set env vars; keys starting with `_` skipped. YAML/JSON/TOML values are not interpolated. JS/TS configs can read `process.env`. |
 
-No `STACKRUN_*` prefix exists in the Node CLI.
-
-### CLI flow (Node)
+### CLI flow
 
 1. If `--version` or `-V`: print version, exit 0.
-2. Resolve `configPath = args.c \|\| args.config \|\| args._[0]` (default `"stack.config"`).
-3. `c12.loadConfig({ name: "stack", configFile: configPath, cwd: process.cwd(), dotenv: true })`.
-4. If `--tunnel` or `process.env.TUNNEL === "true"`: `config.tunnelEnabled = true`.
-5. If `config` is missing: error, exit 1.
-6. **Rust:** If `--dry-run`: print a pretty JSON envelope `{ configFile, config }` (effective `StackrunConfig` after overlays and load defaults; `cfTunnelConfig.cfToken` redacted to `"[redacted]"` when present). Exit 0. Do not spawn children or set up tunnels. Missing-config and parse errors still exit 1.
-7. If `existsSync(configFile)`: log path, `await stackrun(config)`, exit 0.
-8. Else: error `No valid configuration found at ${configPath}`, exit 1.
-
-Node **requires a resolved config file on disk**. There is no `--command` flag in the Node CLI.
+2. Resolve `configPath` from `-c` / `--config` / positional (default `"stack.config"`).
+3. Load config from cwd (file discovery, `.env`, `.stackrc`, local `extends`, `NODE_ENV` overlays).
+4. If `--tunnel` or `TUNNEL=true`: force tunnels on.
+5. If `--command` or `--json` is set, a config file is optional. Otherwise a resolved file is required.
+6. If `--dry-run`: print a pretty JSON envelope `{ configFile, config }` (effective `StackrunConfig` after overlays and load defaults). Exit 0. Do not spawn children or set up tunnels. Missing-config and parse errors still exit 1.
+7. If a config file was used: log its path, run the stack, exit 0.
+8. If no file and no `--command` / `--json`: error `No valid configuration found at ${configPath}`, exit 1.
 
 ## Configuration
 
-### c12 usage (exact)
+### Load defaults
 
-```ts
-loadConfig({
-  name: "stack",
-  configFile: typeof configPath === "string" ? configPath : undefined,
-  cwd: process.cwd(),
-  dotenv: true,
-});
-```
+| Behavior | Rule |
+| --- | --- |
+| RC file | CWD `.stackrc` is loaded (`KEY=VALUE`, unflattened) |
+| Home / workspace RC | **Not** loaded |
+| `package.json` `stack` key | **Not** loaded |
+| `extends` | Local paths only |
+| Env overlays | `NODE_ENV` selects `$<envName>` and `$env.<envName>` |
 
-Not passed (c12 defaults therefore apply):
-
-| Option | Default used | Stackrun consequence |
-| --- | --- | --- |
-| `rcFile` | `.stackrc` | CWD `.stackrc` is loaded (rc9 KEY=VALUE, unflattened) |
-| `globalRc` | unset / falsy | Home/workspace RC is **not** loaded |
-| `packageJson` | unset / falsy | `package.json` `stack` key is **not** loaded |
-| `extend` | `{ extendKey: "extends" }` | Local `extends` is enabled |
-| `envName` | `process.env.NODE_ENV` | `$<envName>` and `$env.<envName>` overlays apply |
-| `defaults` / `overrides` | none | None |
-
-### Discovery (c12 `resolveConfig`)
+### Discovery
 
 Base name from CLI: `stack.config` (or an explicit path).
 
@@ -98,9 +77,19 @@ Search paths:
 2. `{cwd}/.config/{name-without-.config}{ext}` e.g. `.config/stack.yaml`
 3. `{cwd}/.config/{configFile}{ext}` e.g. `.config/stack.config.yaml`
 
-JS/TS/JSON are loaded with jiti. yaml/yml/jsonc/json5/toml are loaded with confbox.
+JSON / JSONC / JSON5 / YAML / TOML load natively. JS/TS load via the jiti bridge below.
 
-### Merge order (c12 + defu)
+### JS/TS config (jiti)
+
+When the resolved path is `.js` / `.mjs` / `.cjs` / `.ts` / `.mts` / `.cts`:
+
+1. Require `node` on PATH (`NodeRequired` if missing). Do not mention other tools.
+2. Run a Node script (`STACKRUN_BRIDGE_FILE` + the same bridge source) that `import("jiti")` from the project cwd.
+3. Default (`--jiti local` / unset `STACKRUN_JITI`): if jiti is missing, fail (`JitiRequired`). Tell the user to use YAML/TOML/JSON, run `npm i -D jiti` in this project, or retry with `--jiti npx` / `STACKRUN_JITI=npx`. Do **not** tell them to install jiti globally (`import` will not see `npm i -g jiti`).
+4. `--jiti npx` / `STACKRUN_JITI=npx`: after a local miss, retry with `npx -p jiti node --input-type=module -e <same script>`. Requires `npx` on PATH (`NpxRequired` if missing: install Node/npm, add local jiti, or use YAML). Do not pass `--yes` unless npx cannot run without it. First run may use the network. Never `npm i` / `npm i -g` / silent project install. Never default to `npx` on every JS/TS config.
+5. Resolve `default` export (or the module; call a function export). Write JSON to stdout. Rust deserializes into `StackrunConfig`.
+
+### Merge order
 
 Higher priority first:
 
@@ -109,105 +98,111 @@ Higher priority first:
 3. Extended layers (`extends`) as fallbacks
 4. Environment-specific keys mixed into each layer (`$<NODE_ENV>`, `$env[NODE_ENV]`)
 
-defu semantics: objects deep-merge; arrays concatenate and de-duplicate; primitives from the higher-priority object win.
+Merge semantics: objects deep-merge; arrays concatenate and de-duplicate; primitives from the higher-priority object win.
 
 ### Canonical config shape (`StackrunConfig`)
 
 ```ts
 {
-  concurrentlyOptions?: ProcessOptions; // on-disk name; Rust type ProcessOptions
-  tunnelEnabled?: boolean;                   // default false
-  cfTunnelConfig?: { ... };                  // see tunnel section
-  beforeCommands?: string[];                 // default []
-  afterCommands?: string[];                  // default []
-  commands?: StackrunConfigCommands[];       // default []
+  before?: string[];                 // alias: beforeCommands
+  after?: string[];                  // alias: afterCommands
+  process?: ProcessOptions;          // alias: concurrentlyOptions
+  tunnel?: false | true | {
+    removeExisting?: boolean;
+    prefix?: string;                 // sibling log name; default Tunnel
+    color?: string;                  // sibling color; default cyan
+    resource?: string;               // default Cloudflare object name
+  };
+  commands?: StackrunConfigCommands[];
 }
 ```
 
-`defineStackrunConfig` is identity (types only).
+One-cycle aliases still deserialize. Prefer the new names in new configs.
+
+`tunnel: false` disables every cloudflared sibling and skips `tunnel.env`. Omitted `tunnel` (or a defaults object) turns tunneling on when any command has `tunnel.local`. `--tunnel` / `TUNNEL=true` force on and abort if no `local` is set.
 
 ### Command entries
 
-Each item is concurrently `Command` plus:
+| Field | Type | Notes |
+| --- | --- | --- |
+| `run` | string | Required to run. Alias: `command`. Entries without a string `run` are **filtered out**. |
+| `name` | string | Log prefix. Truncated to `process.prefixLength` (default 10), then printed as `[name]` (color on that token only). |
+| `cwd` | string | Per-command working directory |
+| `env` | `Record<string, string \| boolean \| undefined>` | Base env |
+| `color` | string | Prefix color. Alias: `prefixColor`. |
+| `tunnel` | object | Optional. `local` starts a cloudflared sibling. `public` makes it a named tunnel. |
+
+`tunnel` fields:
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `command` | string | Required to run. Entries without a string `command` are **filtered out**. |
-| `name` | string | Log prefix. Truncated to `concurrentlyOptions.prefixLength` (default 10), then printed as `[name]` (color on that token only). |
-| `cwd` | string | Per-command working directory |
-| `env` | `Record<string, string \| boolean \| undefined>` | Base env |
-| `prefixColor` | string | concurrently/chalk color |
-| `ipc` | number | concurrently IPC fd (>2) |
-| `raw` | boolean | Raw output |
-| `url` | string | Local URL; required with `tunnelUrl` to create ingress |
-| `tunnelUrl` | string | Public URL; required with `url` |
-| `tunnelEnv` | same as `env` | Merged over `env` when `tunnelEnabled` |
+| `local` | string | Local origin. Alias: `url`. Required for a tunnel sibling. |
+| `public` | string | Public hostname. Alias: `tunnelUrl`. When set: named tunnel + `route dns`. When omitted: quick tunnel (`*.trycloudflare.com`). |
+| `env` | same as `env` | Merged over command `env` when tunneling is on. Alias: `tunnelEnv`. |
+| `resource` | string | Named-tunnel Cloudflare object name. Alias: `name`. Else stack `tunnel.resource`, else `command.name`. Must be unique among named tunnels. |
+| `prefix` | string | Cloudflared sibling log prefix. Else stack `tunnel.prefix`, else `Tunnel`. |
+| `color` | string | Sibling prefix color. Else stack `tunnel.color`, else `cyan`. |
+| `removeExisting` | boolean | Per-command override of stack `tunnel.removeExisting`. |
 
-When tunneling: `env = { ...env, ...tunnelEnv }`. When not: `env` only.
+When tunneling is on: `env = { ...env, ...tunnel.env }`. When not: command `env` only. One command is either quick or named, not both.
 
-### Concurrently defaults applied at load
+### Process defaults applied at load
 
-Using `||`, so falsy user values are replaced:
-
-| Option | Default | Quirk |
+| Option | Default | Notes |
 | --- | --- | --- |
-| `killOthers` | `"failure"` | Cannot set a falsy value |
-| `handleInput` | `true` | `false` is treated as unset and becomes `true` |
-| `prefixColors` | `"auto"` | |
+| `killOthers` | `"failure"` | Kill siblings when a command fails |
+| `handleInput` | `true` | Explicit `false` is honored |
+| `colors` | `"auto"` | Alias: `prefixColors` |
 | `prefixLength` | `10` | Names sliced to this length |
 
-Other concurrently options (`cwd`, `maxProcesses`, `raw`, `restartTries`, `restartDelay`, `successCondition`, `timings`, `prefix`, `group`, `hide`, `killSignal`, `teardown`, …) are passed through.
+## Process lifecycle
 
-## Process lifecycle (Rust)
-
-1. If `tunnelEnabled` (explicit true, `--tunnel` / `TUNNEL=true`, or omitted when commands have `url`+`tunnelUrl`): validate token + ingress. Explicit `tunnelEnabled: false` skips the tunnel. Missing token or no `url`/`tunnelUrl` pairs **aborts with a non-zero error** (Node logged and returned without an exit code).
-2. Log “Tunneling is enabled/disabled”.
-3. `beforeCommands`: sequential shell, stdio inherit. Failure aborts.
-4. If tunneling: create named tunnel (`cloudflared tunnel create`), route DNS, write `config.yml`, then spawn `cloudflared tunnel run` as a sibling process with prefix `[Tunnel]` (or `commandOptions.name`, e.g. bugpin `[tunnel]`).
-5. Spawn user commands concurrently (`sh -c` / `cmd /c`). `tunnelEnv` overlays `env` when tunneling is on. `handleInput: true` inherits stdin; `false` uses null stdin. Child stdout/stderr lines are prefixed `[name]<space>` (name already sliced to `prefixLength`). `prefixColor` / `prefixColors: auto` color only `[name]`; the line body is uncolored. `prefixColors: false` prints `[name]` with no ANSI. Stderr lines still go to stderr.
-6. `afterCommands`: sequential shell. **Skipped if any concurrent command failed** (no `finally`). **Ctrl+C** stops every command (Unix process groups), then `afterCommands` still run.
-7. If a tunnel session was started: delete tunnel, DNS, local creds/`config.yml` (cf-tunnel cleanup), even on failure.
+1. If tunneling is on (`--tunnel` / `TUNNEL=true`, omitted `tunnel` when any command has `tunnel.local`, or `tunnel: true` / defaults object): require at least one `tunnel.local` and `cloudflared` on PATH. Explicit `tunnel: false` skips every sibling. `--tunnel` with zero `local` **aborts before hooks**.
+2. Print “Tunneling is enabled/disabled” (always, not only `tracing`). If tunneling is off and any command has `tunnel.local`, also print that `--tunnel` / `TUNNEL=true` / omitting `tunnel: false` starts siblings.
+3. `before`: sequential shell, stdio inherit. Failure aborts.
+4. For each command with `tunnel.local`:
+   - **Quick** (no `public`): spawn `{cloudflared} tunnel --url {local}` as a prefixed sibling. No login, no create, no DNS.
+   - **Named** (`public` set): require `cert.pem`; `tunnel create` + `route dns` [+ `--overwrite-dns` when `removeExisting`] + spawn `{cloudflared} tunnel run --url {local} {resource}`. Resource: command `tunnel.resource` / `name`, else stack `tunnel.resource`, else `command.name`.
+   - Sibling `[name]` / color: command `tunnel.prefix` / `tunnel.color`, else stack defaults, else `Tunnel` + `cyan`. Do not copy the user command’s name or color. Print when each sibling starts.
+5. Spawn user commands concurrently (`sh -c` / `cmd /c`). `tunnel.env` overlays `env` when tunneling is on. `handleInput: true` inherits stdin; `false` uses null stdin. Child stdout/stderr lines are prefixed `[name]<space>` (name already sliced to `prefixLength`). `color` / `colors: auto` color only `[name]`; the line body is uncolored. `colors: false` prints `[name]` with no ANSI. Stderr lines still go to stderr. Every child including each cloudflared is prefix-logged. Do not wait-parse trycloudflare URLs.
+6. `after`: sequential shell. **Skipped if any concurrent command failed** (no `finally`). **Ctrl+C** stops every command (Unix process groups), then `after` still runs.
+7. Cleanup named sessions only: `cloudflared tunnel delete -f` + local credential JSON. **Do not delete the CNAME** (leftover hostname shows Cloudflare `1016`). Quick tunnels have no account resource.
 8. Log “Stackrun completed”.
 
-Unix: each child is a process group; SIGINT kills every group, then `afterCommands` run. `maxProcesses`, restart, `ipc`, `raw`, and other concurrently keys are accepted in config and **not wired**.
+Unix: each child is a process group; SIGINT kills every group, then `after` runs.
 
-## Cloudflare tunnel (Rust)
+## Cloudflare tunnel
 
-Matches [cf-tunnel 0.1.9](https://github.com/jasenmichael/cf-tunnel): locally-managed named tunnel, not a Quick Tunnel.
+Per-command sibling. Mix quick and named in one stack.
 
-1. Require `cloudflared` on PATH (clear error if missing).
-2. Require `cert.pem` in the cloudflared config dir. Do **not** run interactive `cloudflared tunnel login`; tell the user to run it once.
-3. Token: `cfTunnelConfig.cfToken` or `CF_TOKEN` or `CLOUDFLARE_TOKEN`.
-4. Ingress from commands with both `url` and `tunnelUrl` (strip `http://` / `https://` from hostname).
-5. If `removeExistingTunnel` / `removeExistingDns` is false and a same-name tunnel or DNS record exists: error (same messages as cf-tunnel).
-6. `cloudflared tunnel create` / `route dns`, Cloudflare HTTP API for DNS lookup/delete, spawn `cloudflared tunnel run`.
-7. Cleanup on exit: delete tunnel + DNS + `config.yml` + credential JSON.
+1. When any tunnel is on, require `cloudflared` on PATH **before hooks** (`CloudflaredMissing`).
+2. Named only: require `cert.pem` (`CloudflaredLoginRequired`). Do **not** run interactive `cloudflared tunnel login`. Quick tunnels do not need a cert.
+3. No API token. No Cloudflare REST DNS client.
+4. Named: `cloudflared tunnel create` / `route dns` / `tunnel run --url`. `removeExisting` → `tunnel delete -f` if the name exists, and `route dns --overwrite-dns`. There is no cloudflared command to list or delete a CNAME.
+5. Quick: `cloudflared tunnel --url {local}` only.
+6. Do not write a shared ingress `config.yml`.
+7. Cleanup named: `tunnel delete -f` + local creds. Leave DNS alone.
 
-Rainbow per-character tunnel name is **not** implemented. Unset `commandOptions.prefixColor` uses cyan.
+`--tunnel` with no `tunnel.local`: **do not run `before` or processes**; exit 1.
 
-Missing token or empty ingress: **do not run `beforeCommands` or processes**; exit 1.
-
-## Precedence for the Rust port
+## Precedence
 
 `defaults → configuration files (including RC + extends) → environment variables → CLI arguments`
 
-CLI is highest. This matches how Node applies `--tunnel` / `TUNNEL` after c12, and is the rule for new overrides (`--command`, implemented `--json`).
+CLI is highest.
 
-## Intentional Rust differences
+## Intentional differences
 
-These are required by the refactor goals, not Node bugs:
-
-1. **Rust is the application.** Node is optional and used only to evaluate JS/TS config via a Jiti subprocess. No V8/Deno/Node is embedded in the binary.
-2. **Native formats work without Node.** JSON, JSONC, JSON5, YAML, TOML, `.env`, and `.stackrc` load in Rust.
-3. **`--command <shell>`** is a new CLI override: build a one-entry `commands` list and do not require a config file. Needed so `stackrun --command "python server.py"` works without Node.
-4. **`--json` is implemented** as a CLI overlay (Node declares it but never reads it).
-5. **Stack run is native**, not the `concurrently` npm package. `stack` owns before/after and tunnel session; `process` owns concurrent spawn, names, `[name]` prefixes (color on the bracket token only, including `prefixColors: auto`), `handleInput`, env/`tunnelEnv`, cwd, kill-others-on-failure, SIGINT process-group cleanup. Ctrl+C stops every command, then `afterCommands` run. Other concurrently keys deserialize and are ignored.
-6. **Tunnel manager is independent.** Uses `cloudflared` CLI + Cloudflare DNS HTTP API. Does not embed Node or call `cf-tunnel`. Abort on missing token/ingress is a non-zero error instead of Node’s silent `return`.
-7. **This branch is Rust-only.** Node application sources are not present; refer to `main` for the old implementation.
-8. **Explicit `handleInput: false` is honored.** Node’s `value || true` treated `false` as unset.
-9. **No rainbow tunnel prefix.** Default tunnel prefix color is cyan.
-10. **`--dry-run`** prints the loaded/effective config as JSON and exits without running processes or tunnels. `cfToken` in that JSON is redacted. Process env secrets are not dumped.
-11. **Omitted `tunnelEnabled` follows ingress.** If the file never sets the flag (Node playground / bugpin) but a command has both `url` and `tunnelUrl`, tunneling is on. Explicit `false` still disables. `--tunnel` / `TUNNEL=true` still force on.
+1. **Rust is the application.** Node is used only to evaluate JS/TS config via the jiti subprocess. No JS runtime is embedded in the binary.
+2. **JSON, JSONC, JSON5, YAML, TOML, `.env`, and `.stackrc` load in Rust.** JS/TS need `node` plus local `jiti` or `--jiti npx`.
+3. **`--command <shell>`** builds a one-entry `commands` list and does not require a config file.
+4. **`--json` is a CLI overlay** (highest data priority).
+5. **`stack` owns before/after and per-command tunnel siblings.** `process` owns concurrent spawn, names, `[name]` prefixes (color on the bracket token only, including `colors: auto`), `handleInput`, env/`tunnel.env`, cwd, kill-others-on-failure, SIGINT process-group cleanup. Ctrl+C stops every command, then `after` runs.
+6. **Tunnel manager uses `cloudflared` CLI only** (create / route dns / run / delete). No API token and no REST DNS. Quick tunnels need the binary only. Named tunnels need `cert.pem` from `cloudflared tunnel login`.
+7. **Explicit `handleInput: false` is honored.**
+8. **Every child is prefix-logged**, including each cloudflared. Do not wait-parse trycloudflare URLs. No rainbow prefix.
+9. **`--dry-run`** prints the loaded/effective config as JSON and exits without running processes or tunnels. Process env secrets are not dumped.
+10. **Omitted `tunnel` follows `tunnel.local`.** If any command has `local`, tunneling is on. Explicit `tunnel: false` still disables. `--tunnel` / `TUNNEL=true` still force on (and abort when no `local` is set).
 
 ## Open questions
 
