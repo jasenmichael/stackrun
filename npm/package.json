@@ -1,13 +1,13 @@
 {
   "name": "stackrun",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Run multiple local services with optional Cloudflare tunnels, including stable HTTPS hosts for OAuth callback URLs",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jasenmichael/stackrun.git"
   },
-  "homepage": "https://github.com/jasenmichael/stackrun#readme",
+  "homepage": "https://jasenmichael.github.io/stackrun/",
   "type": "module",
   "bin": {
     "stackrun": "bin/stackrun.js"
@@ -22,12 +22,14 @@
     }
   },
   "files": [
+    "README.md",
     "bin",
     "lib",
     "index.js",
     "index.d.ts"
   ],
   "scripts": {
+    "prepack": "node -e \"require('fs').copyFileSync(require('path').join('..','README.md'),'README.md')\"",
     "postinstall": "node lib/postinstall.js"
   },
   "engines": {

@@ -64,6 +64,34 @@ const config = {
       },
       footer: {
         style: "dark",
+        links: [
+          {
+            title: "Docs",
+            items: [
+              {
+                label: "Website",
+                href: "https://jasenmichael.github.io/stackrun/",
+              },
+              {
+                label: "Install",
+                to: "/install",
+              },
+            ],
+          },
+          {
+            title: "Project",
+            items: [
+              {
+                label: "GitHub",
+                href: "https://github.com/jasenmichael/stackrun",
+              },
+              {
+                label: "npm",
+                href: "https://www.npmjs.com/package/stackrun",
+              },
+            ],
+          },
+        ],
         copyright: `stackrun v${version} · MIT`,
       },
       prism: {

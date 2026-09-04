@@ -3,7 +3,7 @@
 #   https://jasenmichael.github.io/stackrun/install.sh
 #
 #   curl -fsSL https://jasenmichael.github.io/stackrun/install.sh | sh
-#   curl -fsSL ... | STACKRUN_VERSION=1.0.0 sh
+#   curl -fsSL ... | STACKRUN_VERSION=1.0.1 sh
 #   curl -fsSL ... | STACKRUN_INSTALL=/usr/local/bin sh
 set -eu
 
