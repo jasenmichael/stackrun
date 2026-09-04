@@ -1,0 +1,174 @@
+name: release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - run: cargo build
+      - run: npm ci
+      - run: npm run test:npm
+        env:
+          STACKRUN_BINARY: ${{ github.workspace }}/target/debug/stackrun
+          STACKRUN_SKIP_DOWNLOAD: "1"
+      - run: bash -n scripts/install.sh
+      - name: Build website
+        working-directory: website
+        run: |
+          npm ci
+          npm run build
+      - run: test -f website/build/install.sh
+
+  version-changed:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      should_publish: ${{ steps.check.outputs.should_publish }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          last=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ -z "$last" ] || [ "$version" != "$last" ]; then
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "crate=$version last_tag=${last:-none}"
+
+  publish:
+    if: needs.version-changed.outputs.should_publish == 'true'
+    needs: [test, version-changed]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            archive: tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-13
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+          - target: aarch64-pc-windows-msvc
+            os: windows-11-arm
+            archive: zip
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.version-changed.outputs.version }}"
+          bin=stackrun
+          if [ "${{ matrix.archive }}" = "zip" ]; then bin=stackrun.exe; fi
+          src="target/${{ matrix.target }}/release/${bin}"
+          dest="stackrun-v${version}-${{ matrix.target }}"
+          mkdir -p "$dest"
+          cp "$src" "$dest/"
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            7z a "${dest}.zip" "$dest"
+          else
+            tar -czf "${dest}.tar.gz" "$dest"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stackrun-${{ matrix.target }}
+          path: stackrun-v${{ needs.version-changed.outputs.version }}-${{ matrix.target }}.*
+
+  ship:
+    if: needs.version-changed.outputs.should_publish == 'true'
+    needs: [test, version-changed, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: https://registry.npmjs.org
+      - name: Ensure npm 11.5.1+
+        run: |
+          set -euo pipefail
+          npm install -g npm@latest
+          npm --version
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          : > SHA256SUMS
+          while IFS= read -r -d '' f; do
+            (cd "$(dirname "$f")" && sha256sum "$(basename "$f")") >> SHA256SUMS
+          done < <(find dist -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print0 | sort -z)
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${{ needs.version-changed.outputs.version }}"
+          npm ci
+          if [ -f CHANGELOG.md ]; then
+            npx changelogen gh release "$version" || gh release create "v${version}" --title "v${version}" --notes "stackrun ${version}"
+          else
+            gh release create "v${version}" --title "v${version}" --notes "stackrun ${version}"
+          fi
+          gh release upload "v${version}" SHA256SUMS dist/**/*.{tar.gz,zip} --clobber
+      - name: crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked
+      - name: npm
+        run: npm publish ./npm --access public
+
+  website:
+    if: needs.version-changed.outputs.should_publish == 'true'
+    needs: [test, version-changed, ship]
+    uses: ./.github/workflows/docs.yml
+    secrets: inherit
+    permissions:
+      contents: write

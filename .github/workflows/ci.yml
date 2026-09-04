@@ -4,26 +4,83 @@ on:
   push:
     branches:
       - main
+      - refactor/rust
   pull_request:
-    branches:
-      - main
 
 jobs:
-  ci:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  msrv:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: npm i -fg corepack && corepack enable
+      - uses: dtolnay/rust-toolchain@1.74
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+
+  npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: "pnpm"
-      - run: pnpm install
-      - run: pnpm lint
-      - run: pnpm test:types
-      - run: pnpm build
-      - run: pnpm vitest --coverage
-      - uses: codecov/codecov-action@v5
+          node-version: "22"
+      - run: cargo build
+      - run: npm ci
+      - run: npm run test:npm
+        env:
+          STACKRUN_BINARY: ${{ github.workspace }}/target/debug/stackrun
+          STACKRUN_SKIP_DOWNLOAD: "1"
+
+  pages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: jasenmichael/stackrun
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: bash -n scripts/install.sh
+      - name: Build website
+        working-directory: website
+        run: |
+          npm ci
+          npm run build
+      - run: test -f website/build/install.sh
+      - run: STACKRUN_VERSION=1.0.0 scripts/install.sh --dry-run
+
+  audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - run: cargo audit

@@ -1,0 +1,8 @@
+before:
+  - echo base
+$development:
+  before:
+    - echo overlay-dev
+commands:
+  - name: from-overlay
+    run: echo overlay

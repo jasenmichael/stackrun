@@ -1,0 +1,4 @@
+commands:
+  - name: from-config-dir
+    run: echo from-config-dir
+    cwd: ./hidden

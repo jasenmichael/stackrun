@@ -1,0 +1,7 @@
+name: stackrun-test-web
+
+services:
+  web:
+    image: nginx:1.27-alpine
+    ports:
+      - "127.0.0.1:18080:80"

@@ -1,0 +1,7 @@
+tunnel: false
+commands:
+  - name: from-explicit-off
+    run: echo from-explicit-off
+    tunnel:
+      local: http://localhost:4000
+      public: https://off.example

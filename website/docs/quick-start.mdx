@@ -1,0 +1,32 @@
+---
+id: quick-start
+sidebar_position: 3
+title: Quick start
+---
+
+Create `stack.config.yaml` in the project root:
+
+```yaml
+# stack.config.yaml
+commands:
+  - name: api
+    run: npm run dev
+    cwd: ./api
+    color: green
+  - name: web
+    run: npm run dev
+    cwd: ./web
+    color: blue
+```
+
+Run it:
+
+```sh
+stackrun
+```
+
+`stackrun` loads `stack.config` from the current directory. Pass a path if the file is elsewhere:
+
+```sh
+stackrun --config ./stack.config.yaml
+```

@@ -1,0 +1,6 @@
+commands:
+  - name: from-auto-tunnel
+    run: echo from-auto-tunnel
+    tunnel:
+      local: http://localhost:4000
+      public: https://auto.example

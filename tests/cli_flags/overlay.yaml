@@ -1,0 +1,4 @@
+tunnel: false
+commands:
+  - name: file
+    run: echo file

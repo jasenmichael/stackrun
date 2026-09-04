@@ -1,0 +1,37 @@
+[package]
+name = "stackrun"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.74"
+license = "MIT"
+authors = ["Jasen Michael"]
+repository = "https://github.com/jasenmichael/stackrun"
+homepage = "https://github.com/jasenmichael/stackrun"
+documentation = "https://github.com/jasenmichael/stackrun#readme"
+description = "Run multiple local services with optional Cloudflare tunnels, including stable HTTPS hosts for OAuth callback URLs"
+readme = "README.md"
+keywords = ["cli", "process", "concurrent", "cloudflare", "tunnel"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = ["graphify-out/", "site/", "website/"]
+
+[[bin]]
+name = "stackrun"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+ctrlc = { version = "3", features = ["termination"] }
+json5 = "0.4"
+owo-colors = "4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+thiserror = "2"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+pretty_assertions = "1"
+tempfile = "3"

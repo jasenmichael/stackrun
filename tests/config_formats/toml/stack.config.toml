@@ -1,0 +1,6 @@
+tunnel = false
+
+[[commands]]
+name = "from-toml"
+run = "echo from-toml"
+cwd = "./toml-cwd"

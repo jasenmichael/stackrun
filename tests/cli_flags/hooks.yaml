@@ -1,0 +1,7 @@
+before:
+  - touch before.ran
+after:
+  - touch after.ran
+commands:
+  - name: child
+    run: touch child.ran

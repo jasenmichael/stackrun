@@ -1,0 +1,6 @@
+# Native YAML does not interpolate ${APP_DIR} from .env. Values are literal.
+# .env still loads into process env (JS/TS configs can read process.env).
+commands:
+  - name: from-dotenv
+    run: echo from-dotenv
+    cwd: ./env-cwd

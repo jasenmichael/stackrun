@@ -1,0 +1,7 @@
+{
+  commands: [{
+    name: 'from-json5',
+    run: 'echo from-json5',
+    cwd: './json5-cwd',
+  }],
+}

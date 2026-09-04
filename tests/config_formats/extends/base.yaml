@@ -1,0 +1,4 @@
+before: [echo base]
+commands:
+  - name: from-extends-base
+    run: echo basecmd
