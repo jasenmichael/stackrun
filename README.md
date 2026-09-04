@@ -10,6 +10,8 @@
 
 <!-- /automd -->
 
+**Docs:** [https://jasenmichael.github.io/stackrun/](https://jasenmichael.github.io/stackrun/)
+
 stackrun is a process-orchestration CLI. It is an alternative to running a local stack with [concurrently](https://www.npmjs.com/package/concurrently), [npm-run-all2](https://www.npmjs.com/package/npm-run-all2), [Wireit](https://github.com/google/wireit), or native shell operators (`&`, `wait`, `&&`).
 
 Those tools stay inside npm scripts or a single shell. stackrun is a standalone binary: any language, prefixed logs, `before` / `after` hooks, and optional Cloudflare tunnels.
@@ -84,7 +86,7 @@ curl -fsSL https://jasenmichael.github.io/stackrun/install.sh | sh
 Pin a version or install directory:
 
 ```sh
-curl -fsSL https://jasenmichael.github.io/stackrun/install.sh | STACKRUN_VERSION=1.0.0 sh
+curl -fsSL https://jasenmichael.github.io/stackrun/install.sh | STACKRUN_VERSION=1.0.1 sh
 curl -fsSL https://jasenmichael.github.io/stackrun/install.sh | STACKRUN_INSTALL=/usr/local/bin sh
 ```
 
@@ -98,8 +100,8 @@ Extract `stackrun` (or `stackrun.exe`) onto your `PATH`. Windows has no curl scr
 
 ```sh
 # Example: Linux x86_64 (gnu). Get the archive and SHA256SUMS from the release.
-tar -xzf stackrun-v1.0.0-x86_64-unknown-linux-gnu.tar.gz
-sudo mv stackrun-v1.0.0-x86_64-unknown-linux-gnu/stackrun /usr/local/bin/
+tar -xzf stackrun-v1.0.1-x86_64-unknown-linux-gnu.tar.gz
+sudo mv stackrun-v1.0.1-x86_64-unknown-linux-gnu/stackrun /usr/local/bin/
 sha256sum -c SHA256SUMS
 ```
 
@@ -505,6 +507,8 @@ Issues and pull requests are welcome.
 ## License
 
 Published under the [MIT](./LICENSE) license.
+
+Docs: [https://jasenmichael.github.io/stackrun/](https://jasenmichael.github.io/stackrun/)
 
 Maintained by [@jasenmichael](https://github.com/jasenmichael).
 

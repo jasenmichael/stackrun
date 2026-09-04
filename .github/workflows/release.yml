@@ -30,6 +30,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            website/package-lock.json
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
@@ -186,6 +190,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Ensure npm 11.5.1+
         run: |
           set -euo pipefail
@@ -220,6 +226,7 @@ jobs:
           NODE_AUTH_TOKEN: ""
         run: |
           unset NODE_AUTH_TOKEN
+          cp README.md npm/README.md
           npm publish ./npm --access public
 
   website:
