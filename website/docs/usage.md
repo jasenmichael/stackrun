@@ -2,6 +2,7 @@
 id: usage
 sidebar_position: 4
 title: Usage
+description: stackrun CLI flags for config files, --tunnel, --dry-run, and running commands in parallel.
 ---
 
 ```text
