@@ -208,7 +208,7 @@ fn fixtures_dry_run_without_docker() {
     for name in ["redis", "web", "multi"] {
         let report = dry_run(&fixture(name));
         assert_eq!(
-            report["config"]["tunnel"], false,
+            report["config"]["forceTunnel"], false,
             "{name}: tunnels must stay off"
         );
         assert_eq!(report["config"]["process"]["handleInput"], false);

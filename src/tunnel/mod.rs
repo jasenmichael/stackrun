@@ -1,7 +1,7 @@
 mod cloudflared;
 mod session;
 
-use crate::config::types::{Command, TunnelDefaults};
+use crate::config::types::Command;
 use std::sync::Arc;
 
 pub use cloudflared::{
@@ -35,13 +35,10 @@ impl TunnelRuntime {
 }
 
 /// Unique named-tunnel names among commands that have `public` set.
-pub fn unique_named_names(
-    commands: &[Command],
-    defaults: &TunnelDefaults,
-) -> Result<(), crate::error::Error> {
+pub fn unique_named_names(commands: &[Command]) -> Result<(), crate::error::Error> {
     let mut seen = std::collections::BTreeSet::new();
     for cmd in commands {
-        if let Some(name) = cmd.named_tunnel_name_with(defaults) {
+        if let Some(name) = cmd.named_tunnel_name() {
             if !seen.insert(name.clone()) {
                 return Err(crate::error::Error::DuplicateTunnelName { name });
             }
@@ -92,7 +89,7 @@ mod tests {
                 ..Command::default()
             },
         ];
-        let err = unique_named_names(&cmds, &TunnelDefaults::default()).unwrap_err();
+        let err = unique_named_names(&cmds).unwrap_err();
         assert!(matches!(err, Error::DuplicateTunnelName { .. }));
     }
 }

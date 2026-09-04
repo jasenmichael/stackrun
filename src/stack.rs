@@ -27,7 +27,7 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
             return Err(Error::NoTunnelIngress);
         }
         let _binary = runtime.cloudflared.binary_path()?;
-        tunnel::unique_named_names(&cmds, &config.tunnel_defaults())?;
+        tunnel::unique_named_names(&cmds)?;
         if cmds.iter().any(|c| c.is_named_tunnel())
             && !runtime.cloudflared.has_cert(&tunnel::default_config_dir())
         {
@@ -37,12 +37,6 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
         }
     } else {
         logging::emit_opt("Tunneling is disabled", host_color);
-        if has_local {
-            logging::emit_opt(
-                "Config has tunnel.local. Pass --tunnel or set TUNNEL=true, or omit tunnel: false, to start cloudflared siblings",
-                host_color,
-            );
-        }
     }
 
     let exec_env: Vec<(String, String)> = std::env::vars().collect();
@@ -59,12 +53,16 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
 
     let mut sessions: Vec<TunnelSession> = Vec::new();
     let mut specs = Vec::new();
-    let defaults = config.tunnel_defaults();
+    let prefix_length = config
+        .process
+        .as_ref()
+        .map(|p| p.prefix_length_or_default())
+        .unwrap_or(10);
 
     if tunnel_on {
         for cmd in &cmds {
             specs.push(cmd.clone());
-            match setup_sibling(&runtime, cmd, &defaults) {
+            match setup_sibling(&runtime, cmd, prefix_length) {
                 Ok(Some((sibling, session))) => {
                     specs.push(sibling);
                     if let Some(sess) = session {
@@ -91,7 +89,7 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
     for cmd in &cmds {
         logging::emit_opt(command_start_line(cmd), host_color);
         if tunnel_on && cmd.tunnel_local().is_some() {
-            logging::emit_opt(tunnel_start_line(cmd, &defaults), host_color);
+            logging::emit_opt(tunnel_start_line(cmd, prefix_length), host_color);
         }
     }
 
@@ -131,35 +129,37 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
 fn setup_sibling(
     runtime: &TunnelRuntime,
     cmd: &Command,
-    defaults: &crate::config::types::TunnelDefaults,
+    prefix_length: usize,
 ) -> Result<Option<(Command, Option<TunnelSession>)>, Error> {
     let Some(local) = cmd.tunnel_local() else {
         return Ok(None);
     };
     let binary = runtime.cloudflared.binary_path()?;
+    let log = cmd.sibling_log_prefix(prefix_length);
     if let Some(public) = cmd.tunnel_public() {
         let name = cmd
-            .named_tunnel_name_with(defaults)
+            .named_tunnel_name()
             .expect("named tunnel has a name after unique_named_names");
         let remove = cmd
             .tunnel
             .as_ref()
             .and_then(|t| t.remove_existing)
-            .or(defaults.remove_existing)
             .unwrap_or(false);
         let sess = tunnel::setup_named(runtime, &name, local, public, remove)?;
         let sibling = Command {
             run: tunnel::named_run_command(&sess),
-            name: Some(cmd.sibling_prefix(defaults)),
-            color: Some(cmd.sibling_color(defaults)),
+            prefix: Some(log.clone()),
+            name: Some(log),
+            color: Some(cmd.sibling_color()),
             ..Command::default()
         };
         Ok(Some((sibling, Some(sess))))
     } else {
         let sibling = Command {
             run: tunnel::quick_run_command(&binary, local),
-            name: Some(cmd.sibling_prefix(defaults)),
-            color: Some(cmd.sibling_color(defaults)),
+            prefix: Some(log.clone()),
+            name: Some(log),
+            color: Some(cmd.sibling_color()),
             ..Command::default()
         };
         Ok(Some((sibling, None)))
@@ -169,10 +169,8 @@ fn setup_sibling(
 /// Human start line for a user command (stderr, not prefixed child output).
 fn command_start_line(cmd: &Command) -> String {
     let name = cmd
-        .name
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .unwrap_or("command");
+        .resolved_prefix_raw()
+        .unwrap_or_else(|| "command".into());
     match cmd.cwd.as_deref().filter(|s| !s.is_empty()) {
         Some(cwd) => format!("Starting [{name}] {} in {cwd}", cmd.run),
         None => format!("Starting [{name}] {}", cmd.run),
@@ -181,13 +179,11 @@ fn command_start_line(cmd: &Command) -> String {
 
 /// Human start line for a cloudflared sibling. Named tunnels include `public`.
 /// Quick tunnels mention `*.trycloudflare.com` without parsing child stdout.
-fn tunnel_start_line(cmd: &Command, defaults: &crate::config::types::TunnelDefaults) -> String {
-    let sibling = cmd.sibling_prefix(defaults);
+fn tunnel_start_line(cmd: &Command, prefix_length: usize) -> String {
+    let sibling = cmd.sibling_log_prefix(prefix_length);
     let name = cmd
-        .name
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .unwrap_or("command");
+        .resolved_prefix_raw()
+        .unwrap_or_else(|| "command".into());
     let local = cmd.tunnel_local().unwrap_or("");
     match cmd.tunnel_public() {
         Some(public) => format!(
@@ -206,8 +202,7 @@ mod tests {
     use crate::logging;
 
     #[test]
-    fn named_sibling_defaults_prefix_not_command_name() {
-        let defaults = crate::config::types::TunnelDefaults::default();
+    fn named_sibling_log_prefix_includes_command_name() {
         let cmd = Command {
             run: "echo".into(),
             name: Some("api".into()),
@@ -220,8 +215,8 @@ mod tests {
             ..Command::default()
         };
         assert_eq!(cmd.named_tunnel_name().as_deref(), Some("api"));
-        assert_eq!(cmd.sibling_prefix(&defaults), "tunnel");
-        assert_eq!(cmd.sibling_color(&defaults), "cyan");
+        assert_eq!(cmd.sibling_log_prefix(10), "tunnel-api");
+        assert_eq!(cmd.sibling_color(), "cyan");
         assert_eq!(
             tunnel::quick_run_command("cloudflared", "http://127.0.0.1:3000"),
             "cloudflared tunnel --url http://127.0.0.1:3000"
@@ -230,12 +225,6 @@ mod tests {
 
     #[test]
     fn sibling_prefix_and_resource_resolve() {
-        let defaults = crate::config::types::TunnelDefaults {
-            prefix: Some("tunnel".into()),
-            color: Some("cyan".into()),
-            resource: Some("bugpin".into()),
-            ..crate::config::types::TunnelDefaults::default()
-        };
         let cmd = Command {
             run: "echo".into(),
             name: Some("nuxt".into()),
@@ -243,16 +232,14 @@ mod tests {
             tunnel: Some(CommandTunnel {
                 local: Some("http://127.0.0.1:3000".into()),
                 public: Some("https://bugpin.example.dev".into()),
+                resource: Some("bugpin".into()),
                 ..CommandTunnel::default()
             }),
             ..Command::default()
         };
-        assert_eq!(cmd.sibling_prefix(&defaults), "tunnel");
-        assert_eq!(cmd.sibling_color(&defaults), "cyan");
-        assert_eq!(
-            cmd.named_tunnel_name_with(&defaults).as_deref(),
-            Some("bugpin")
-        );
+        assert_eq!(cmd.sibling_log_prefix(10), "tunnel-nuxt");
+        assert_eq!(cmd.sibling_color(), "cyan");
+        assert_eq!(cmd.named_tunnel_name().as_deref(), Some("bugpin"));
     }
 
     #[test]
@@ -286,10 +273,6 @@ mod tests {
 
     #[test]
     fn tunnel_start_line_named_includes_public() {
-        let defaults = crate::config::types::TunnelDefaults {
-            prefix: Some("tunnel".into()),
-            ..crate::config::types::TunnelDefaults::default()
-        };
         let cmd = Command {
             run: "nuxt dev --port 3001 --host".into(),
             name: Some("nuxt".into()),
@@ -301,14 +284,13 @@ mod tests {
             ..Command::default()
         };
         assert_eq!(
-            logging::format_host_line(&tunnel_start_line(&cmd, &defaults), false),
-            "[stackrun] Starting tunnel sibling [tunnel] for nuxt at http://localhost:3001 (https://app.example.dev)"
+            logging::format_host_line(&tunnel_start_line(&cmd, 10), false),
+            "[stackrun] Starting tunnel sibling [tunnel-nuxt] for nuxt at http://localhost:3001 (https://app.example.dev)"
         );
     }
 
     #[test]
     fn tunnel_start_line_quick_mentions_trycloudflare() {
-        let defaults = crate::config::types::TunnelDefaults::default();
         let cmd = Command {
             run: "echo".into(),
             name: Some("web".into()),
@@ -319,8 +301,8 @@ mod tests {
             ..Command::default()
         };
         assert_eq!(
-            logging::format_host_line(&tunnel_start_line(&cmd, &defaults), false),
-            "[stackrun] Starting tunnel sibling [tunnel] for web at http://127.0.0.1:3000 (public host is a new *.trycloudflare.com)"
+            logging::format_host_line(&tunnel_start_line(&cmd, 10), false),
+            "[stackrun] Starting tunnel sibling [tunnel-web] for web at http://127.0.0.1:3000 (public host is a new *.trycloudflare.com)"
         );
     }
 }

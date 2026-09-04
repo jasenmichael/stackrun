@@ -13,19 +13,20 @@ Auth providers (OAuth, OIDC, SSO) only redirect to callback URLs you registered.
 | `local` | Local origin (`http://127.0.0.1:4000`). |
 | `public` | Public hostname. Set this for a named tunnel + `route dns`. Omit it for a quick tunnel. |
 | `env` | Merged over `env` when tunneling is on. |
-| `resource` | Cloudflare object name. Else stack `tunnel.resource`, else `command.name`. Unique among named tunnels. |
-| `prefix` | Cloudflared log prefix. Else stack `tunnel.prefix`, else `tunnel`. |
-| `color` | Cloudflared prefix color. Else stack `tunnel.color`, else `cyan`. |
-| `removeExisting` | Per-command override of stack `tunnel.removeExisting`. |
+| `resource` | Cloudflare object name. Else the command's prefix/name, else `stackrun`. Unique among named tunnels. |
+| `color` | Cloudflared prefix color. Default `cyan`. |
+| `removeExisting` | Delete an existing named tunnel and overwrite DNS. |
+
+The sibling log token is `[tunnel-<prefix>]` (command `prefix` if set, else sliced `name`). Example: `web` → `[web]` + `[tunnel-web]`.
 
 **Quick** (`local` only): `cloudflared tunnel --url <local>` opens a random `*.trycloudflare.com` host. No login, no token, no DNS.
 
 **Named** (`local` + `public`): `cloudflared tunnel create` + `route dns` + `tunnel run --url <local> <resource>`.
 
-Named tunnels need `cert.pem` from `cloudflared tunnel login`. Stack `tunnel.removeExisting: true` deletes an existing name and overwrites DNS.
+Named tunnels need `cert.pem` from `cloudflared tunnel login`. `removeExisting: true` on the command deletes an existing name and overwrites DNS.
 
 Cleanup deletes the tunnel and local creds. It does not delete the CNAME. A leftover host shows Cloudflare `1016`.
 
-`--tunnel` / `TUNNEL=true` force tunnels on. `tunnel: false` at stack level runs commands without `cloudflared` and without `tunnel.env`.
+`--tunnel` / `TUNNEL=true` force tunnels on. A top-level `tunnel` key is ignored. Omit `tunnel` on a command to skip its sibling.
 
 `--tunnel` with zero `local` exits 1 before hooks. If tunneling is on and `cloudflared` is missing (or named tunnels lack `cert.pem`), stackrun exits before hooks and prints install + login steps.

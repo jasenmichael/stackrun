@@ -1,5 +1,5 @@
 use stackrun::config::types::{
-    Command, CommandEntry, CommandTunnel, ProcessOptions, StackrunConfig, TunnelSetting,
+    Command, CommandEntry, CommandTunnel, ProcessOptions, StackrunConfig,
 };
 use stackrun::stack;
 use stackrun::tunnel::{MockCloudflared, TunnelRuntime};
@@ -26,7 +26,6 @@ fn missing_cloudflared_does_not_run_commands() {
     let marker = dir.path().join("ran");
     let before = dir.path().join("before");
     let config = StackrunConfig {
-        tunnel: Some(TunnelSetting::Flag(true)),
         before: Some(vec![format!("echo x > {}", before.display())]),
         commands: Some(vec![CommandEntry::Full(Command {
             run: format!("echo ran > {}", marker.display()),
@@ -56,7 +55,6 @@ fn empty_ingress_aborts_before_commands() {
     let marker = dir.path().join("before");
     let config = StackrunConfig {
         force_tunnel: true,
-        tunnel: Some(TunnelSetting::Flag(true)),
         before: Some(vec![format!("echo x > {}", marker.display())]),
         commands: Some(vec![CommandEntry::Full(Command {
             run: "echo hi".into(),
@@ -174,7 +172,6 @@ fn named_missing_cert_aborts_before_hooks() {
     let dir = tempdir().unwrap();
     let before = dir.path().join("before");
     let config = StackrunConfig {
-        tunnel: Some(TunnelSetting::Flag(true)),
         before: Some(vec![format!("echo x > {}", before.display())]),
         commands: Some(vec![CommandEntry::Full(Command {
             run: "echo hi".into(),
@@ -206,7 +203,6 @@ fn quick_only_runs_without_cert() {
         ..MockCloudflared::default()
     });
     let config = StackrunConfig {
-        tunnel: Some(TunnelSetting::Defaults(Default::default())),
         process: Some(ProcessOptions {
             handle_input: Some(false),
             ..ProcessOptions::default()

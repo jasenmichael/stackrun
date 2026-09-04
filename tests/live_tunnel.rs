@@ -1,7 +1,5 @@
 //! Optional live tunnel check. Skips unless `STACKRUN_LIVE_TUNNEL=1`.
-use stackrun::config::types::{
-    Command, CommandEntry, CommandTunnel, StackrunConfig, TunnelDefaults, TunnelSetting,
-};
+use stackrun::config::types::{Command, CommandEntry, CommandTunnel, StackrunConfig};
 use stackrun::stack;
 use stackrun::tunnel::TunnelRuntime;
 
@@ -11,10 +9,6 @@ fn live_tunnel_opt_in() {
         return;
     }
     let config = StackrunConfig {
-        tunnel: Some(TunnelSetting::Defaults(TunnelDefaults {
-            remove_existing: Some(true),
-            ..TunnelDefaults::default()
-        })),
         commands: Some(vec![CommandEntry::Full(Command {
             run: "sleep 1".into(),
             name: Some("sleep".into()),
@@ -23,6 +17,7 @@ fn live_tunnel_opt_in() {
                 public: std::env::var("STACKRUN_LIVE_HOSTNAME")
                     .ok()
                     .map(|h| format!("https://{h}")),
+                remove_existing: Some(true),
                 ..CommandTunnel::default()
             }),
             ..Command::default()

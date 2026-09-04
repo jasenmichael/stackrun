@@ -34,7 +34,7 @@ Commands are opaque processes. Python, Node, Go, shell, or any executable works.
 
 Unix is the primary platform. On SIGINT, Stackrun stops each child process group. Windows uses `cmd /c` without that extra group handling.
 
-`cloudflared` is needed **only for tunnels**. No `tunnel` key, or `tunnel: false`, means stackrun does not look for it.
+`cloudflared` is needed **only for tunnels**. Omit `tunnel` on a command and stackrun does not look for it.
 
 Install when you use tunnels:
 
@@ -181,7 +181,7 @@ stackrun --config ./stack.config.yaml
 
 One stack: start a Docker DB, run api + web, expose web, tear the DB down.
 
-**Quick tunnel** (no `public`). URL is a new `https://<id>.trycloudflare.com` each run, in the `[tunnel]` log. Needs `cloudflared`. No login.
+**Quick tunnel** (no `public`). URL is a new `https://<id>.trycloudflare.com` each run, in the `[tunnel-web]` log. Needs `cloudflared`. No login.
 
 ```yaml
 # stack.config.yaml
@@ -311,7 +311,7 @@ stackrun --dry-run
 ```json
 {
   "configFile": "/abs/path/to/stack.config.yaml",
-  "config": { "commands": [], "tunnel": false }
+  "config": { "commands": [], "forceTunnel": false }
 }
 ```
 
@@ -371,7 +371,6 @@ Top-level keys:
 | `before` | string array | `[]` | Sequential hooks before services. Failure aborts the run. |
 | `after` | string array | `[]` | Sequential hooks after commands have exited (ok, fail, or Ctrl+C). Empty/omitted is a no-op. |
 | `process` | object | see below | Process-manager options. |
-| `tunnel` | `false` or object | auto | `false` disables. Object is named-tunnel defaults (`removeExisting`). Omitted + any `tunnel.local` enables. |
 
 ### `commands`
 
@@ -381,6 +380,7 @@ Entries without a string `run` are ignored.
 | --- | --- | --- |
 | `run` | string | Shell command to run (required). |
 | `name` | string | Log prefix. Truncated to `prefixLength` (default 10) and printed as `[name]`; only that token is colored |
+| `prefix` | string | Optional log token. When set, used as-is (not sliced). Else `name` (sliced). |
 | `cwd` | string | Working directory |
 | `env` | map | Environment variables (`string` or `boolean`) |
 | `color` | string | Prefix color (`red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`) |
@@ -421,20 +421,21 @@ A command with no `tunnel` key has no `cloudflared` sibling.
 | `local` | Local origin (`http://127.0.0.1:4000`). |
 | `public` | Public hostname. Set this for a named tunnel + `route dns`. Omit it for a quick tunnel. |
 | `env` | Merged over `env` when tunneling is on. |
-| `resource` | Cloudflare object name. Else stack `tunnel.resource`, else `command.name`. Unique among named tunnels. |
-| `prefix` | Cloudflared log prefix. Else stack `tunnel.prefix`, else `tunnel`. |
-| `color` | Cloudflared prefix color. Else stack `tunnel.color`, else `cyan`. |
-| `removeExisting` | Per-command override of stack `tunnel.removeExisting`. |
+| `resource` | Cloudflare object name. Else the command's prefix/name, else `stackrun`. Unique among named tunnels. |
+| `color` | Cloudflared prefix color. Default `cyan`. |
+| `removeExisting` | Delete an existing named tunnel and overwrite DNS. |
 
 **Quick** (`local` only): `cloudflared tunnel --url <local>` opens a random `*.trycloudflare.com` host. No login, no token, no DNS.
 
 **Named** (`local` + `public`): `cloudflared tunnel create` + `route dns` + `tunnel run --url <local> <resource>`.
 
-Named tunnels need `cert.pem` from `cloudflared tunnel login`. Stack `tunnel.removeExisting: true` deletes an existing name and overwrites DNS.
+The sibling log token is `[tunnel-<prefix>]` (command `prefix` if set, else sliced `name`). Example: `web` → `[web]` + `[tunnel-web]`.
+
+Named tunnels need `cert.pem` from `cloudflared tunnel login`. `removeExisting: true` on the command deletes an existing name and overwrites DNS.
 
 Cleanup deletes the tunnel and local creds. It does not delete the CNAME. A leftover host shows Cloudflare `1016`.
 
-`--tunnel` / `TUNNEL=true` force tunnels on. `tunnel: false` at stack level runs commands without `cloudflared` and without `tunnel.env`.
+`--tunnel` / `TUNNEL=true` force tunnels on. A top-level `tunnel` key is ignored. Omit `tunnel` on a command to skip its sibling.
 
 `--tunnel` with zero `local` exits 1 before hooks. If tunneling is on and `cloudflared` is missing (or named tunnels lack `cert.pem`), stackrun exits before hooks and prints install + login steps.
 
@@ -486,7 +487,7 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 ```
 
-Behavior: [SPEC.md](SPEC.md). Tools: [STACK.md](STACK.md). Output: [DESIGN.md](DESIGN.md). Plan: [PLAN.md](PLAN.md). Later: [ROADMAP.md](ROADMAP.md).
+Behavior: [SPEC.md](SPEC.md). Crate deps: [Cargo.toml](Cargo.toml). Output: [DESIGN.md](DESIGN.md). Plan: [PLAN.md](PLAN.md). Later: [ROADMAP.md](ROADMAP.md).
 
 Checked-in fixtures live next to the integration tests: `tests/config_formats/`, `tests/cli_flags/`, and `tests/docker_stack/`.
 

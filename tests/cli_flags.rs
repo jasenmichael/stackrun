@@ -131,7 +131,7 @@ fn dry_run_command_without_file() {
         report["config"]["commands"][0],
         "touch ".to_string() + &marker.display().to_string()
     );
-    assert_eq!(report["config"]["tunnel"], false);
+    assert_eq!(report["config"]["forceTunnel"], false);
     assert!(!marker.exists(), "dry-run must not spawn --command");
 }
 
@@ -203,10 +203,10 @@ fn json_overlay_wins_over_file() {
             "--config",
             "overlay.yaml",
             "--json",
-            r#"{"tunnel":true,"commands":[{"name":"json","run":"echo json"}]}"#,
+            r#"{"commands":[{"name":"json","run":"echo json"}]}"#,
         ],
     );
-    assert_ne!(report["config"]["tunnel"], false);
+    assert_eq!(report["config"]["forceTunnel"], false);
     // json overlay is preferred; file commands still merge (defu concat unique)
     let names: Vec<&str> = report["config"]["commands"]
         .as_array()
@@ -240,7 +240,7 @@ fn tunnel_short_and_long() {
     let root = flags_root();
     for flag in ["-t", "--tunnel"] {
         let report = dry_run_ok(&root, &["--dry-run", "--config", "tunnel.yaml", flag]);
-        assert_ne!(report["config"]["tunnel"], false, "{flag}");
+        assert_eq!(report["config"]["forceTunnel"], true, "{flag}");
     }
 }
 
@@ -257,7 +257,7 @@ fn tunnel_env_true_only() {
         "{}",
         String::from_utf8_lossy(&on.stderr)
     );
-    assert_ne!(stdout_json(&on)["config"]["tunnel"], false);
+    assert_eq!(stdout_json(&on)["config"]["forceTunnel"], true);
 
     let off = run_in_with_env(
         &root,
@@ -269,7 +269,7 @@ fn tunnel_env_true_only() {
         "{}",
         String::from_utf8_lossy(&off.stderr)
     );
-    assert_eq!(stdout_json(&off)["config"]["tunnel"], false);
+    assert_eq!(stdout_json(&off)["config"]["forceTunnel"], false);
 }
 
 #[test]
@@ -292,7 +292,7 @@ fn tunnel_with_json_and_command() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report = stdout_json(&output);
-    assert_ne!(report["config"]["tunnel"], false);
+    assert_eq!(report["config"]["forceTunnel"], true);
     // --command replaces commands after json overlay
     assert_eq!(report["config"]["commands"][0], "echo x");
 }

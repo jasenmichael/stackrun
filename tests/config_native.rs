@@ -95,7 +95,10 @@ fn rc_file_merges_under_main() {
     )
     .unwrap();
     let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
-    assert!(loaded.config.tunnel_enabled());
+    assert!(
+        !loaded.config.tunnel_enabled(),
+        "top-level tunnel is ignored"
+    );
     assert_eq!(loaded.config.before_commands(), &["echo rc".to_string()]);
 }
 
@@ -108,10 +111,23 @@ fn json_cli_overlay_wins() {
     )
     .unwrap();
     let mut opts = LoadOptions::for_cwd(dir.path());
-    opts.json_overlay = Some(r#"{"tunnel": true}"#.into());
+    opts.json_overlay = Some(r#"{"commands":[{"run":"echo overlay"}]}"#.into());
     let loaded = load_config(opts).unwrap();
-    assert!(loaded.config.tunnel_enabled());
-    assert_eq!(loaded.config.runnable_commands()[0].run, "echo file");
+    assert!(
+        !loaded.config.tunnel_enabled(),
+        "top-level tunnel overlay is ignored"
+    );
+    let runs: Vec<String> = loaded
+        .config
+        .runnable_commands()
+        .iter()
+        .map(|c| c.run.clone())
+        .collect();
+    assert!(
+        runs.contains(&"echo overlay".into()),
+        "json overlay commands merge: {runs:?}"
+    );
+    assert!(runs.contains(&"echo file".into()));
 }
 
 #[test]
@@ -151,9 +167,11 @@ fn env_specific_overlay() {
     fs::write(
         dir.path().join("stack.config.yaml"),
         r#"
-tunnel: false
+before:
+  - echo base
 $development:
-  tunnel: true
+  before:
+    - echo overlay-dev
 commands:
   - run: echo x
 "#,
@@ -162,7 +180,15 @@ commands:
     std::env::set_var("NODE_ENV", "development");
     let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
     std::env::remove_var("NODE_ENV");
-    assert!(loaded.config.tunnel_enabled());
+    assert!(
+        loaded
+            .config
+            .before_commands()
+            .iter()
+            .any(|s| s == "echo overlay-dev"),
+        "NODE_ENV overlay should apply: {:?}",
+        loaded.config.before_commands()
+    );
 }
 
 #[test]
@@ -229,11 +255,6 @@ fn spec_tunnel_shape_maps_namable_tunnel() {
         r#"
 process:
   killOthers: failure
-tunnel:
-  resource: bugpin
-  removeExisting: true
-  prefix: tunnel
-  color: cyan
 commands:
   - name: nuxt
     run: echo nuxt
@@ -241,25 +262,20 @@ commands:
     tunnel:
       local: http://localhost:3000
       public: https://bugpin.example.dev
+      resource: bugpin
+      removeExisting: true
 "#,
     )
     .unwrap();
     let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
-    let defaults = loaded.config.tunnel_defaults();
-    assert_eq!(defaults.prefix.as_deref(), Some("tunnel"));
-    assert_eq!(defaults.color.as_deref(), Some("cyan"));
-    assert_eq!(defaults.resource.as_deref(), Some("bugpin"));
-    assert_eq!(defaults.remove_existing, Some(true));
+    assert!(loaded.config.tunnel_enabled());
     let cmd = &loaded.config.runnable_commands()[0];
     assert_eq!(cmd.run, "echo nuxt");
     assert_eq!(cmd.color.as_deref(), Some("green"));
     assert_eq!(cmd.tunnel_local(), Some("http://localhost:3000"));
     assert_eq!(cmd.tunnel_public(), Some("https://bugpin.example.dev"));
-    assert_eq!(cmd.sibling_prefix(&defaults), "tunnel");
-    assert_eq!(
-        cmd.named_tunnel_name_with(&defaults).as_deref(),
-        Some("bugpin")
-    );
+    assert_eq!(cmd.sibling_log_prefix(10), "tunnel-nuxt");
+    assert_eq!(cmd.named_tunnel_name().as_deref(), Some("bugpin"));
 }
 
 #[test]
@@ -278,8 +294,8 @@ fn rc_beats_extends_when_main_omits_key() {
     fs::write(dir.path().join(".stackrc"), "tunnel=true\n").unwrap();
     let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
     assert!(
-        loaded.config.tunnel_enabled(),
-        "SPEC: RC beats extends when main omits the key"
+        !loaded.config.tunnel_enabled(),
+        "stack tunnel keys are ignored; no command has tunnel.local"
     );
     assert_eq!(loaded.config.before_commands(), &["echo base".to_string()]);
 }

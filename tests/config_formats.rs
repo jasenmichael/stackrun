@@ -83,7 +83,12 @@ fn assert_cmd(report: &Value, name: &str, command: &str) {
 }
 
 fn tunnel_on(v: &Value) -> bool {
-    v["config"]["tunnel"] != serde_json::json!(false)
+    v["config"]["forceTunnel"] == true
+        || v["config"]["commands"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|c| c["tunnel"]["local"].is_string())
 }
 
 fn jiti_available() -> bool {
@@ -144,7 +149,7 @@ fn loads_json() {
     assert_eq!(report["config"]["commands"][0]["cwd"], "./json-cwd");
     assert_eq!(report["config"]["commands"][0]["env"]["FROM"], "json");
     assert_eq!(report["config"]["commands"][0]["color"], "green");
-    assert_eq!(report["config"]["tunnel"], false);
+    assert_eq!(report["config"]["forceTunnel"], false);
 }
 
 #[test]
@@ -202,14 +207,14 @@ fn omitted_tunnel_enabled_with_ingress_enables() {
 }
 
 #[test]
-fn explicit_tunnel_enabled_false_keeps_ingress_disabled() {
+fn stack_tunnel_false_is_ignored_when_command_has_local() {
     let report = assert_native_format(
         "explicit_off",
         "stack.config.yaml",
         "from-explicit-off",
         "echo from-explicit-off",
     );
-    assert_eq!(report["config"]["tunnel"], false);
+    assert!(tunnel_on(&report));
 }
 
 #[test]
@@ -221,7 +226,7 @@ fn loads_yml() {
 fn loads_toml() {
     let report = assert_native_format("toml", "stack.config.toml", "from-toml", "echo from-toml");
     assert_eq!(report["config"]["commands"][0]["cwd"], "./toml-cwd");
-    assert_eq!(report["config"]["tunnel"], false);
+    assert_eq!(report["config"]["forceTunnel"], false);
 }
 
 #[test]
@@ -238,7 +243,6 @@ fn discovers_config_dir_stack_yaml() {
 #[test]
 fn cwd_stackrc_merges() {
     let report = dry_run_ok(&fixture("rc"), &["--dry-run"]);
-    assert!(tunnel_on(&report));
     assert_eq!(report["config"]["before"][0], "echo rc");
     assert_cmd(&report, "from-rc-main", "echo main");
 }
@@ -283,7 +287,7 @@ fn node_env_overlay() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report = stdout_json(&output);
-    assert!(tunnel_on(&report));
+    assert_eq!(report["config"]["before"][0], "echo overlay-dev");
     assert_cmd(&report, "from-overlay", "echo overlay");
 }
 

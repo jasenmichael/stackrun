@@ -8,31 +8,15 @@ pub struct StackrunConfig {
     pub before: Option<Vec<String>>,
     pub after: Option<Vec<String>>,
     pub process: Option<ProcessOptions>,
-    /// `false` disables. Object is named-tunnel defaults. Omitted infers from `tunnel.local`.
-    pub tunnel: Option<TunnelSetting>,
     pub commands: Option<Vec<CommandEntry>>,
     /// Set by `--tunnel` / `TUNNEL=true`. Not a config-file key.
-    #[serde(skip)]
+    #[serde(skip_deserializing, default)]
     pub force_tunnel: bool,
 }
 
 impl StackrunConfig {
     pub fn tunnel_enabled(&self) -> bool {
-        if self.force_tunnel {
-            return true;
-        }
-        match &self.tunnel {
-            Some(TunnelSetting::Flag(false)) => false,
-            Some(TunnelSetting::Flag(true)) => true,
-            Some(TunnelSetting::Defaults(_)) | None => self.has_any_tunnel_local(),
-        }
-    }
-
-    pub fn tunnel_defaults(&self) -> TunnelDefaults {
-        match &self.tunnel {
-            Some(TunnelSetting::Defaults(d)) => d.clone(),
-            _ => TunnelDefaults::default(),
-        }
+        self.force_tunnel || self.has_any_tunnel_local()
     }
 
     /// True when a command has a non-empty `tunnel.local`.
@@ -62,31 +46,6 @@ impl StackrunConfig {
     }
 }
 
-/// Stack-level tunnel: `false` / `true` or named-tunnel defaults.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum TunnelSetting {
-    Flag(bool),
-    Defaults(TunnelDefaults),
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-pub struct TunnelDefaults {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub remove_existing: Option<bool>,
-    /// Sibling log prefix. Default `tunnel`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub prefix: Option<String>,
-    /// Sibling prefix color. Default `cyan`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub color: Option<String>,
-    /// Default Cloudflare object name for named tunnels.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub resource: Option<String>,
-}
-
-const DEFAULT_SIBLING_PREFIX: &str = "tunnel";
 const DEFAULT_SIBLING_COLOR: &str = "cyan";
 
 fn nonempty_owned(value: Option<String>) -> Option<String> {
@@ -192,6 +151,9 @@ pub struct Command {
     pub run: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Log prefix. When set, used as-is (not sliced). Else `name` (sliced).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -214,10 +176,7 @@ pub struct CommandTunnel {
     /// Cloudflare object name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource: Option<String>,
-    /// Sibling log prefix. Falls back to stack `tunnel.prefix`, then `tunnel`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub prefix: Option<String>,
-    /// Sibling prefix color. Falls back to stack `tunnel.color`, then `cyan`.
+    /// Sibling prefix color. Default `cyan`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -247,14 +206,13 @@ impl Command {
         self.tunnel_local().is_some() && self.tunnel_public().is_none()
     }
 
-    /// Named-tunnel Cloudflare object name. Defaults to `command.name`.
-    pub fn named_tunnel_name(&self) -> Option<String> {
-        self.named_tunnel_name_with(&TunnelDefaults::default())
+    /// `prefix` if set, else `name`.
+    pub fn resolved_prefix_raw(&self) -> Option<String> {
+        nonempty_owned(self.prefix.clone()).or_else(|| nonempty_owned(self.name.clone()))
     }
 
-    /// Cloudflare object name: command `resource`, else stack `resource`,
-    /// else `command.name`, else `stackrun`.
-    pub fn named_tunnel_name_with(&self, defaults: &TunnelDefaults) -> Option<String> {
+    /// Named-tunnel Cloudflare object name: `resource`, else prefix/name, else `stackrun`.
+    pub fn named_tunnel_name(&self) -> Option<String> {
         if !self.is_named_tunnel() {
             return None;
         }
@@ -262,27 +220,29 @@ impl Command {
             self.tunnel
                 .as_ref()
                 .and_then(|t| nonempty_owned(t.resource.clone()))
-                .or_else(|| nonempty_owned(defaults.resource.clone()))
-                .or_else(|| nonempty_owned(self.name.clone()))
+                .or_else(|| self.resolved_prefix_raw())
                 .unwrap_or_else(|| "stackrun".to_string()),
         )
     }
 
-    /// Log prefix for the cloudflared sibling.
-    pub fn sibling_prefix(&self, defaults: &TunnelDefaults) -> String {
-        self.tunnel
-            .as_ref()
-            .and_then(|t| nonempty_owned(t.prefix.clone()))
-            .or_else(|| nonempty_owned(defaults.prefix.clone()))
-            .unwrap_or_else(|| DEFAULT_SIBLING_PREFIX.to_string())
+    /// Cloudflared sibling log token: `tunnel-{display_name}`. Not sliced again.
+    pub fn sibling_log_prefix(&self, prefix_length: usize) -> String {
+        let base = {
+            let d = self.display_name(prefix_length);
+            if d.is_empty() {
+                "command".to_string()
+            } else {
+                d
+            }
+        };
+        format!("tunnel-{base}")
     }
 
     /// Prefix color for the cloudflared sibling.
-    pub fn sibling_color(&self, defaults: &TunnelDefaults) -> String {
+    pub fn sibling_color(&self) -> String {
         self.tunnel
             .as_ref()
             .and_then(|t| nonempty_owned(t.color.clone()))
-            .or_else(|| nonempty_owned(defaults.color.clone()))
             .unwrap_or_else(|| DEFAULT_SIBLING_COLOR.to_string())
     }
 
@@ -308,6 +268,9 @@ impl Command {
     }
 
     pub fn display_name(&self, prefix_length: usize) -> String {
+        if let Some(p) = nonempty_owned(self.prefix.clone()) {
+            return p;
+        }
         let raw = self.name.clone().unwrap_or_default();
         if prefix_length == 0 || raw.is_empty() {
             return raw;
@@ -349,9 +312,9 @@ mod tests {
     }
 
     #[test]
-    fn sibling_defaults_are_tunnel_cyan() {
+    fn sibling_log_prefix_uses_command_name() {
         let cmd = Command {
-            name: Some("nuxt".into()),
+            name: Some("web".into()),
             run: "echo".into(),
             color: Some("green".into()),
             tunnel: Some(CommandTunnel {
@@ -360,19 +323,18 @@ mod tests {
             }),
             ..Command::default()
         };
-        let defaults = TunnelDefaults::default();
-        assert_eq!(cmd.sibling_prefix(&defaults), "tunnel");
-        assert_eq!(cmd.sibling_color(&defaults), "cyan");
+        assert_eq!(cmd.sibling_log_prefix(10), "tunnel-web");
+        assert_eq!(cmd.sibling_color(), "cyan");
     }
 
     #[test]
-    fn command_prefix_wins_over_stack() {
+    fn command_prefix_wins_over_name_for_sibling() {
         let cmd = Command {
             name: Some("nuxt".into()),
+            prefix: Some("edge".into()),
             run: "echo".into(),
             tunnel: Some(CommandTunnel {
                 local: Some("http://localhost:3000".into()),
-                prefix: Some("edge".into()),
                 color: Some("magenta".into()),
                 resource: Some("cmd-cf".into()),
                 public: Some("https://x.example".into()),
@@ -380,29 +342,19 @@ mod tests {
             }),
             ..Command::default()
         };
-        let defaults = TunnelDefaults {
-            prefix: Some("tunnel".into()),
-            color: Some("cyan".into()),
-            resource: Some("stack-cf".into()),
-            ..TunnelDefaults::default()
-        };
-        assert_eq!(cmd.sibling_prefix(&defaults), "edge");
-        assert_eq!(cmd.sibling_color(&defaults), "magenta");
-        assert_eq!(
-            cmd.named_tunnel_name_with(&defaults).as_deref(),
-            Some("cmd-cf")
-        );
+        assert_eq!(cmd.display_name(10), "edge");
+        assert_eq!(cmd.sibling_log_prefix(10), "tunnel-edge");
+        assert_eq!(cmd.sibling_color(), "magenta");
+        assert_eq!(cmd.named_tunnel_name().as_deref(), Some("cmd-cf"));
     }
 
     #[test]
-    fn stack_tunnel_defaults_and_command_tunnel() {
+    fn stack_tunnel_key_is_ignored() {
         let cfg: StackrunConfig = serde_json::from_str(
             r#"{
                 "tunnel": {
                     "resource": "bugpin",
-                    "removeExisting": true,
-                    "prefix": "tunnel",
-                    "color": "cyan"
+                    "removeExisting": true
                 },
                 "commands": [{
                     "name": "nuxt",
@@ -410,24 +362,17 @@ mod tests {
                     "color": "green",
                     "tunnel": {
                         "local": "http://localhost:3000",
-                        "public": "https://bugpin.example.dev"
+                        "public": "https://bugpin.example.dev",
+                        "resource": "bugpin"
                     }
                 }]
             }"#,
         )
         .unwrap();
-        let defaults = cfg.tunnel_defaults();
-        assert_eq!(defaults.prefix.as_deref(), Some("tunnel"));
-        assert_eq!(defaults.color.as_deref(), Some("cyan"));
-        assert_eq!(defaults.resource.as_deref(), Some("bugpin"));
-        assert_eq!(defaults.remove_existing, Some(true));
+        assert!(cfg.tunnel_enabled());
         let cmd = &cfg.runnable_commands()[0];
-        assert_eq!(cmd.sibling_prefix(&defaults), "tunnel");
-        assert_eq!(cmd.sibling_color(&defaults), "cyan");
-        assert_eq!(
-            cmd.named_tunnel_name_with(&defaults).as_deref(),
-            Some("bugpin")
-        );
-        assert_ne!(cmd.sibling_prefix(&defaults), "nuxt");
+        assert_eq!(cmd.sibling_log_prefix(10), "tunnel-nuxt");
+        assert_eq!(cmd.sibling_color(), "cyan");
+        assert_eq!(cmd.named_tunnel_name().as_deref(), Some("bugpin"));
     }
 }

@@ -109,19 +109,13 @@ Merge semantics: objects deep-merge; arrays concatenate and de-duplicate; primit
   before?: string[];
   after?: string[];
   process?: ProcessOptions;
-  tunnel?: false | true | {
-    removeExisting?: boolean;
-    prefix?: string;                 // sibling log name; default Tunnel
-    color?: string;                  // sibling color; default cyan
-    resource?: string;               // default Cloudflare object name
-  };
   commands?: StackrunConfigCommands[];
 }
 ```
 
-Only these keys load. Unknown keys are ignored.
+Only these keys load. Unknown keys are ignored (including a top-level `tunnel` key).
 
-`tunnel: false` disables every cloudflared sibling and skips `tunnel.env`. Omitted `tunnel` (or a defaults object) turns tunneling on when any command has `tunnel.local`. `--tunnel` / `TUNNEL=true` force on and abort if no `local` is set.
+There is no stack-wide `tunnel` flag. Tunneling is on when any command has `tunnel.local`, or when `--tunnel` / `TUNNEL=true` force it on. `--tunnel` with zero `local` aborts before hooks (`NoTunnelIngress`). Omit `tunnel` on a command to skip its sibling.
 
 ### Command entries
 
@@ -129,22 +123,24 @@ Only these keys load. Unknown keys are ignored.
 | --- | --- | --- |
 | `run` | string | Required to run. Entries without a string `run` are **filtered out**. |
 | `name` | string | Child log prefix. Truncated to `process.prefixLength` (default 10), then printed as `[name]` (color on that token only). Stackrun-owned lines use `[stackrun]`, not this field. |
+| `prefix` | string | Optional log token. When set, used as-is (not sliced). Else `name` (sliced). Empty both: spawn uses `index`; start lines use `"command"`. |
 | `cwd` | string | Per-command working directory |
 | `env` | `Record<string, string \| boolean \| undefined>` | Base env |
 | `color` | string | Prefix color |
 | `tunnel` | object | Optional. `local` starts a cloudflared sibling. `public` makes it a named tunnel. |
 
-`tunnel` fields:
+`tunnel` fields (per-command only):
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `local` | string | Local origin. Required for a tunnel sibling. |
 | `public` | string | Public hostname. When set: named tunnel + `route dns`. When omitted: quick tunnel (`*.trycloudflare.com`). |
 | `env` | same as `env` | Merged over command `env` when tunneling is on. |
-| `resource` | string | Named-tunnel Cloudflare object name. Else stack `tunnel.resource`, else `command.name`. Must be unique among named tunnels. |
-| `prefix` | string | Cloudflared sibling log prefix. Else stack `tunnel.prefix`, else `tunnel`. |
-| `color` | string | Sibling prefix color. Else stack `tunnel.color`, else `cyan`. |
-| `removeExisting` | boolean | Per-command override of stack `tunnel.removeExisting`. |
+| `resource` | string | Named-tunnel Cloudflare object name. Else the command's resolved prefix/name, else `stackrun`. Must be unique among named tunnels. |
+| `color` | string | Sibling prefix color. Default `cyan`. |
+| `removeExisting` | boolean | Delete an existing named tunnel and overwrite DNS. |
+
+The sibling log token is always `tunnel-{resolved_prefix}` (command `prefix` if set, else sliced `name`). Example: `web` → `[web]` + `[tunnel-web]`. The `tunnel-` token is not sliced off. There is no `tunnel.prefix` field.
 
 When tunneling is on: `env = { ...env, ...tunnel.env }`. When not: command `env` only. One command is either quick or named, not both.
 
@@ -159,13 +155,13 @@ When tunneling is on: `env = { ...env, ...tunnel.env }`. When not: command `env`
 
 ## Process lifecycle
 
-1. If tunneling is on (`--tunnel` / `TUNNEL=true`, omitted `tunnel` when any command has `tunnel.local`, or `tunnel: true` / defaults object): require at least one `tunnel.local` and `cloudflared` on PATH. Explicit `tunnel: false` skips every sibling. `--tunnel` with zero `local` **aborts before hooks**.
-2. Print `[stackrun] Tunneling is enabled/disabled` (always, not only `tracing`). If tunneling is off and any command has `tunnel.local`, also print that `--tunnel` / `TUNNEL=true` / omitting `tunnel: false` starts siblings.
+1. If tunneling is on (any command has `tunnel.local`, or `--tunnel` / `TUNNEL=true`): require at least one `tunnel.local` and `cloudflared` on PATH. `--tunnel` with zero `local` **aborts before hooks**.
+2. Print `[stackrun] Tunneling is enabled/disabled` (always, not only `tracing`).
 3. `before`: sequential shell, stdio inherit. Failure aborts.
 4. For each command with `tunnel.local`:
    - **Quick** (no `public`): spawn `{cloudflared} tunnel --url {local}` as a prefixed sibling. No login, no create, no DNS.
-   - **Named** (`public` set): require `cert.pem`; `tunnel create` + `route dns` [+ `--overwrite-dns` when `removeExisting`] + spawn `{cloudflared} tunnel run --url {local} {resource}`. Resource: command `tunnel.resource`, else stack `tunnel.resource`, else `command.name`.
-   - Sibling `[name]` / color: command `tunnel.prefix` / `tunnel.color`, else stack defaults, else `tunnel` + `cyan`. Do not copy the user command’s name or color.
+   - **Named** (`public` set): require `cert.pem`; `tunnel create` + `route dns` [+ `--overwrite-dns` when `removeExisting`] + spawn `{cloudflared} tunnel run --url {local} {resource}`. Resource: command `tunnel.resource`, else the command's resolved prefix/name, else `stackrun`.
+   - Sibling log token is `[tunnel-<resolved-prefix>]`. Color: command `tunnel.color`, else `cyan`. Store the sibling prefix as the full token (do not re-slice `tunnel-`).
    - After setup succeeds, print one host start line per user command (`[stackrun] Starting [name] {run}` plus ` in {cwd}` when `cwd` is set) and one per tunnel sibling (`[stackrun] Starting tunnel sibling [prefix] …`). Named: include `local` and `public`. Quick: include `local` and that the public host is a new `*.trycloudflare.com` (do not parse or wait on cloudflared stdout).
 5. Spawn user commands concurrently (`sh -c` / `cmd /c`). `tunnel.env` overlays `env` when tunneling is on. `handleInput: true` inherits stdin; `false` uses null stdin. Child stdout/stderr lines are prefixed `[name]<space>` (name already sliced to `prefixLength`). `color` / `colors: auto` color only `[name]`; the line body is uncolored. `colors: false` prints `[name]` with no ANSI. Stderr lines still go to stderr. Every child including each cloudflared is prefix-logged. Do not wait-parse trycloudflare URLs. Stackrun-owned sentences (config loaded, tunneling on/off, hooks, start lines, command exited/stopped/errored, completed, errors) use `[stackrun]<space>` the same way: color only the `stackrun` name (letter-rainbow); body uncolored.
 6. `after`: sequential shell. **Always runs** after commands have exited (success, failure, or Ctrl+C), if any `after` entries were set. Empty / omitted `after` is a no-op and does not change the exit code. **Ctrl+C** stops every command (Unix process groups), then `after` runs, then the process exits **0** unless a command had already failed on its own.
@@ -216,4 +212,4 @@ The `stackrun` npm package is a bin shim plus a small JS API. It does **not** ru
 7. **Explicit `handleInput: false` is honored.**
 8. **Every child is prefix-logged**, including each cloudflared. Do not wait-parse trycloudflare URLs.
 9. **`--dry-run`** prints the loaded/effective config as JSON and exits without running processes or tunnels. Process env secrets are not dumped.
-10. **Omitted `tunnel` follows `tunnel.local`.** If any command has `local`, tunneling is on. Explicit `tunnel: false` still disables. `--tunnel` / `TUNNEL=true` still force on (and abort when no `local` is set).
+10. **Tunneling follows `tunnel.local`.** If any command has `local`, tunneling is on. A top-level `tunnel` key is ignored. `--tunnel` / `TUNNEL=true` still force on (and abort when no `local` is set).

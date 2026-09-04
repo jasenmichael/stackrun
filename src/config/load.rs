@@ -213,24 +213,6 @@ pub fn apply_defaults(config: &mut StackrunConfig) {
     }
     config.process = Some(opts);
 
-    use super::types::TunnelSetting;
-    if config.force_tunnel {
-        match &config.tunnel {
-            Some(TunnelSetting::Defaults(_)) | Some(TunnelSetting::Flag(true)) => {}
-            _ => config.tunnel = Some(TunnelSetting::Flag(true)),
-        }
-    } else if matches!(
-        &config.tunnel,
-        Some(TunnelSetting::Flag(false)) | Some(TunnelSetting::Flag(true))
-    ) {
-        // explicit off or on
-    } else if config.has_any_tunnel_local() {
-        if config.tunnel.is_none() {
-            config.tunnel = Some(TunnelSetting::Defaults(Default::default()));
-        }
-    } else {
-        config.tunnel = Some(TunnelSetting::Flag(false));
-    }
     if config.before.is_none() {
         config.before = Some(Vec::new());
     }
@@ -305,7 +287,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_tunnel_false_wins_over_local() {
+    fn stack_tunnel_false_is_ignored_when_command_has_local() {
         let _g = env_lock();
         env::remove_var("TUNNEL");
         let dir = tempdir().unwrap();
@@ -316,7 +298,7 @@ mod tests {
         .unwrap();
         let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
         let report = dry_run_report(&loaded);
-        assert!(!report.config.tunnel_enabled());
+        assert!(report.config.tunnel_enabled());
     }
 
     #[test]
@@ -334,7 +316,7 @@ mod tests {
         )
         .unwrap();
         let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
-        assert!(!loaded.config.tunnel_enabled());
+        assert!(loaded.config.tunnel_enabled());
         assert_eq!(
             loaded.config.before_commands(),
             &["echo spec-before".to_string()]

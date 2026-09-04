@@ -5,7 +5,6 @@ export type CommandTunnel = {
   public?: string;
   env?: Record<string, EnvValue>;
   resource?: string;
-  prefix?: string;
   color?: string;
   removeExisting?: boolean;
 };
@@ -13,6 +12,7 @@ export type CommandTunnel = {
 export type Command = {
   run: string;
   name?: string;
+  prefix?: string;
   cwd?: string;
   env?: Record<string, EnvValue>;
   color?: string;
@@ -26,18 +26,10 @@ export type ProcessOptions = {
   prefixLength?: number;
 };
 
-export type TunnelDefaults = {
-  removeExisting?: boolean;
-  prefix?: string;
-  color?: string;
-  resource?: string;
-};
-
 export type StackrunConfig = {
   before?: string[];
   after?: string[];
   process?: ProcessOptions;
-  tunnel?: false | true | TunnelDefaults;
   commands?: Array<Command | string>;
 };
 

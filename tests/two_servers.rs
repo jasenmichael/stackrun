@@ -2,13 +2,11 @@
 //! Fake cloudflared only (`MockCloudflared`). No live Cloudflare.
 
 use stackrun::config::types::{
-    Command, CommandEntry, CommandTunnel, EnvValue, ProcessOptions, StackrunConfig, TunnelDefaults,
-    TunnelSetting,
+    Command, CommandEntry, CommandTunnel, ProcessOptions, StackrunConfig,
 };
 use stackrun::stack;
 use stackrun::tunnel::{MockCloudflared, TunnelRuntime};
 use stackrun::Error;
-use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -118,13 +116,8 @@ fn fail_cmd(go: &Path) -> Command {
     }
 }
 
-fn base_config(
-    commands: Vec<Command>,
-    tunnel: TunnelSetting,
-    before: Option<Vec<String>>,
-) -> StackrunConfig {
+fn base_config(commands: Vec<Command>, before: Option<Vec<String>>) -> StackrunConfig {
     StackrunConfig {
-        tunnel: Some(tunnel),
         process: Some(ProcessOptions {
             handle_input: Some(false),
             kill_others: Some(stackrun::config::types::KillOthers::One("failure".into())),
@@ -150,7 +143,7 @@ fn probe_then_fail(config: StackrunConfig, runtime: TunnelRuntime, api: u16, web
 }
 
 #[test]
-fn configured_tunnel_false_serves_without_cloudflared_or_tunnel_env() {
+fn omitted_command_tunnel_serves_without_cloudflared_or_tunnel_env() {
     if skip_python() {
         return;
     }
@@ -159,11 +152,6 @@ fn configured_tunnel_false_serves_without_cloudflared_or_tunnel_env() {
     let web = free_port();
     let go = dir.path().join("go-fail");
     let env_api = dir.path().join("env-api.txt");
-    let mut env = BTreeMap::new();
-    env.insert(
-        "STACKRUN_TUNNEL_MARK".into(),
-        EnvValue::String("should-not-appear".into()),
-    );
     let cf = mock_cf(true, true);
     let config = base_config(
         vec![
@@ -175,32 +163,17 @@ fn configured_tunnel_false_serves_without_cloudflared_or_tunnel_env() {
                 ),
                 name: Some("api".into()),
                 color: Some("green".into()),
-                tunnel: Some(CommandTunnel {
-                    local: Some(format!("http://127.0.0.1:{api}")),
-                    public: Some("https://api.example.dev".into()),
-                    env: Some(env),
-                    ..CommandTunnel::default()
-                }),
                 ..Command::default()
             },
-            http_cmd(
-                "web",
-                web,
-                "blue",
-                Some(CommandTunnel {
-                    local: Some(format!("http://127.0.0.1:{web}")),
-                    ..CommandTunnel::default()
-                }),
-            ),
+            http_cmd("web", web, "blue", None),
             fail_cmd(&go),
         ],
-        TunnelSetting::Flag(false),
         None,
     );
     probe_then_fail(config, TunnelRuntime::from_arc(cf.clone()), api, web, &go);
     assert!(
         cf.created.lock().unwrap().is_empty(),
-        "tunnel: false must not create tunnels"
+        "commands without tunnel must not create tunnels"
     );
     let mark = fs::read_to_string(&env_api).unwrap_or_default();
     assert_eq!(
@@ -228,6 +201,7 @@ fn both_named_fakes_create_and_route_twice() {
                 Some(CommandTunnel {
                     local: Some(format!("http://127.0.0.1:{api}")),
                     public: Some("https://api.example.dev".into()),
+                    remove_existing: Some(true),
                     ..CommandTunnel::default()
                 }),
             ),
@@ -238,15 +212,12 @@ fn both_named_fakes_create_and_route_twice() {
                 Some(CommandTunnel {
                     local: Some(format!("http://127.0.0.1:{web}")),
                     public: Some("https://web.example.dev".into()),
+                    remove_existing: Some(true),
                     ..CommandTunnel::default()
                 }),
             ),
             fail_cmd(&go),
         ],
-        TunnelSetting::Defaults(TunnelDefaults {
-            remove_existing: Some(true),
-            ..TunnelDefaults::default()
-        }),
         None,
     );
     probe_then_fail(config, TunnelRuntime::from_arc(cf.clone()), api, web, &go);
@@ -284,6 +255,7 @@ fn named_plus_quick_one_create_one_url() {
                 Some(CommandTunnel {
                     local: Some(format!("http://127.0.0.1:{api}")),
                     public: Some("https://api.example.dev".into()),
+                    remove_existing: Some(true),
                     ..CommandTunnel::default()
                 }),
             ),
@@ -298,10 +270,6 @@ fn named_plus_quick_one_create_one_url() {
             ),
             fail_cmd(&go),
         ],
-        TunnelSetting::Defaults(TunnelDefaults {
-            remove_existing: Some(true),
-            ..TunnelDefaults::default()
-        }),
         None,
     );
     probe_then_fail(config, TunnelRuntime::from_arc(cf.clone()), api, web, &go);
@@ -344,7 +312,6 @@ fn both_quick_zero_create() {
             ),
             fail_cmd(&go),
         ],
-        TunnelSetting::Defaults(Default::default()),
         None,
     );
     probe_then_fail(config, TunnelRuntime::from_arc(cf.clone()), api, web, &go);
@@ -371,16 +338,13 @@ fn only_api_has_tunnel() {
                 Some(CommandTunnel {
                     local: Some(format!("http://127.0.0.1:{api}")),
                     public: Some("https://api.example.dev".into()),
+                    remove_existing: Some(true),
                     ..CommandTunnel::default()
                 }),
             ),
             http_cmd("web", web, "blue", None),
             fail_cmd(&go),
         ],
-        TunnelSetting::Defaults(TunnelDefaults {
-            remove_existing: Some(true),
-            ..TunnelDefaults::default()
-        }),
         None,
     );
     probe_then_fail(config, TunnelRuntime::from_arc(cf.clone()), api, web, &go);
@@ -394,7 +358,6 @@ fn tunnel_flag_without_local_aborts_before_hooks() {
     let before = dir.path().join("before");
     let config = StackrunConfig {
         force_tunnel: true,
-        tunnel: Some(TunnelSetting::Flag(true)),
         before: Some(vec![format!("echo x > {}", before.display())]),
         commands: Some(vec![CommandEntry::Full(Command {
             run: "echo hi".into(),
@@ -414,7 +377,6 @@ fn tunnel_on_missing_cloudflared_aborts_before_hooks() {
     let dir = tempdir().unwrap();
     let before = dir.path().join("before");
     let config = StackrunConfig {
-        tunnel: Some(TunnelSetting::Defaults(Default::default())),
         before: Some(vec![format!("echo x > {}", before.display())]),
         commands: Some(vec![CommandEntry::Full(Command {
             run: "echo hi".into(),
@@ -449,7 +411,6 @@ fn tunnel_off_without_cloudflared_still_serves() {
             http_cmd("web", web, "blue", None),
             fail_cmd(&go),
         ],
-        TunnelSetting::Flag(false),
         None,
     );
     probe_then_fail(config, TunnelRuntime::from_arc(cf), api, web, &go);
@@ -487,7 +448,6 @@ fn quick_only_without_cert_still_runs() {
             ),
             fail_cmd(&go),
         ],
-        TunnelSetting::Defaults(Default::default()),
         None,
     );
     probe_then_fail(config, TunnelRuntime::from_arc(cf.clone()), api, web, &go);

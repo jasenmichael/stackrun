@@ -22,7 +22,7 @@ Commands are opaque processes. Python, Node, Go, shell, or any executable works.
 
 One stack: start a Docker DB, run api + web, expose web, tear the DB down.
 
-**Quick tunnel** (no `public`). URL is a new `https://<id>.trycloudflare.com` each run, in the `[tunnel]` log. Needs `cloudflared`. No login.
+**Quick tunnel** (no `public`). URL is a new `https://<id>.trycloudflare.com` each run, in the `[tunnel-web]` log. Needs `cloudflared`. No login.
 
 ```yaml
 # stack.config.yaml
@@ -80,7 +80,7 @@ Put the file in the project root and run `stackrun`. See [Quick start](./quick-s
 
 Unix is the primary platform. On SIGINT, Stackrun stops each child process group. Windows uses `cmd /c` without that extra group handling.
 
-`cloudflared` is needed **only for tunnels**. No `tunnel` key, or `tunnel: false`, means stackrun does not look for it.
+`cloudflared` is needed **only for tunnels**. Omit `tunnel` on a command and stackrun does not look for it.
 
 <Tabs groupId="cloudflared" queryString>
   <TabItem value="macos" label="macOS" default>

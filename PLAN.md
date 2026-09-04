@@ -58,13 +58,13 @@ npm              bin shim + stackrun() / defineStackrunConfig (spawn native bina
 | 7 | Per-command tunnels | Done | `tunnel.local` only → quick. `local` + `public` → named. Mix in one stack. |
 | 8 | No token / REST DNS | Done | `cloudflared` CLI only. Cleanup does not delete the CNAME. |
 | 9 | SPEC-only config keys | Done | No serde aliases for dropped keys. |
-| 10 | Namable tunnel sibling | Done | Sibling log `prefix`/`color` (default `Tunnel`/`cyan`). CF object is `resource`. |
+| 10 | Namable tunnel sibling | Done | Sibling log `[tunnel-<prefix>]` / `cyan`. CF object is `resource`. |
 
 `src/stack.rs` is the product entry. `process` exposes `run_hook` + `run_concurrent`. Tunnel is a one-adapter seam (`CloudflaredOps`).
 
 ### Crate choices
 
-See `STACK.md`. Short why:
+See `Cargo.toml`. Short why:
 
 - **clap** — standard CLI
 - **serde family** — config is data, not code (except JS/TS bridge)
@@ -83,7 +83,7 @@ See `STACK.md`. Short why:
 - Extension order: JS/TS before YAML.
 - JS/TS jiti: local `import` only by default. `--jiti npx` / `STACKRUN_JITI=npx` retries via `npx -p jiti`.
 - `TUNNEL=true` exact match (not `1` / `yes`).
-- Omitted `tunnel` + any `tunnel.local` enables tunnels (`tunnel: false` still off).
+- Any command `tunnel.local` enables tunnels. Top-level `tunnel` is ignored. Omit command `tunnel` to skip that sibling.
 - Filter commands without a string `run`.
 - Truncate names to `prefixLength` (default 10).
 - Honor explicit `handleInput: false`.
@@ -95,7 +95,7 @@ See `STACK.md`. Short why:
 
 - Native binaries on merge to `main` (six targets; no musl, no `cross`).
 - One npm package `stackrun`: `bin` + `import { stackrun }`. Install downloads the matching GitHub Release binary. No `@jasenmichael/stackrun-*` packages.
-- Publish from `release.yml` when the crate version is newer than the last tag. No laptop `npm publish` / `cargo publish`.
+- Publish from `release.yml` when the crate version is newer than the last tag. No laptop `npm publish` / `cargo publish`. npm uses trusted publishers (OIDC on the `ship` job). crates.io uses `CARGO_REGISTRY_TOKEN`.
 - Dynamic docs: automd + changelogen in the release PR (no tag from the laptop).
 - GitHub Pages: Docusaurus `website/` publishes to `gh-pages` on every `main` push and on each release. Curl install: `https://jasenmichael.github.io/stackrun/install.sh`.
 - Post-1.0 ideas: [ROADMAP.md](ROADMAP.md).

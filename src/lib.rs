@@ -12,10 +12,7 @@ pub mod process;
 pub mod stack;
 pub mod tunnel;
 
-pub use config::types::{
-    Command, CommandEntry, CommandTunnel, ProcessOptions, StackrunConfig, TunnelDefaults,
-    TunnelSetting,
-};
+pub use config::types::{Command, CommandEntry, CommandTunnel, ProcessOptions, StackrunConfig};
 pub use config::{
     apply_defaults, dry_run_report, format_dry_run, load_config, DryRunReport, LoadOptions,
     LoadedConfig,

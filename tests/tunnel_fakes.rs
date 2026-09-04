@@ -2,8 +2,7 @@
 //! Tunnel sibling is `true tunnel …` so spawn succeeds. User command is echo.
 
 use stackrun::config::types::{
-    Command, CommandEntry, CommandTunnel, ProcessOptions, StackrunConfig, TunnelDefaults,
-    TunnelSetting,
+    Command, CommandEntry, CommandTunnel, ProcessOptions, StackrunConfig,
 };
 use stackrun::stack;
 use stackrun::tunnel::{MockCloudflared, TunnelRuntime};
@@ -26,10 +25,6 @@ fn run_with_fake_named_tunnel_spawns_user_command_and_cleans_up() {
     });
 
     let config = StackrunConfig {
-        tunnel: Some(TunnelSetting::Defaults(TunnelDefaults {
-            remove_existing: Some(true),
-            ..TunnelDefaults::default()
-        })),
         process: Some(ProcessOptions {
             handle_input: Some(false),
             ..ProcessOptions::default()
@@ -40,6 +35,7 @@ fn run_with_fake_named_tunnel_spawns_user_command_and_cleans_up() {
             tunnel: Some(CommandTunnel {
                 local: Some("http://127.0.0.1:9".into()),
                 public: Some("https://api.example.dev".into()),
+                remove_existing: Some(true),
                 ..CommandTunnel::default()
             }),
             ..Command::default()
@@ -67,12 +63,6 @@ fn stack_resource_is_cloudflare_name_not_log_prefix() {
     });
 
     let config = StackrunConfig {
-        tunnel: Some(TunnelSetting::Defaults(TunnelDefaults {
-            remove_existing: Some(true),
-            prefix: Some("tunnel".into()),
-            color: Some("cyan".into()),
-            resource: Some("bugpin".into()),
-        })),
         process: Some(ProcessOptions {
             handle_input: Some(false),
             ..ProcessOptions::default()
@@ -83,6 +73,8 @@ fn stack_resource_is_cloudflare_name_not_log_prefix() {
             tunnel: Some(CommandTunnel {
                 local: Some("http://127.0.0.1:9".into()),
                 public: Some("https://bugpin.example.dev".into()),
+                resource: Some("bugpin".into()),
+                remove_existing: Some(true),
                 ..CommandTunnel::default()
             }),
             ..Command::default()
@@ -110,7 +102,6 @@ fn run_with_fake_quick_tunnel_skips_create_and_dns() {
     });
 
     let config = StackrunConfig {
-        tunnel: Some(TunnelSetting::Defaults(Default::default())),
         process: Some(ProcessOptions {
             handle_input: Some(false),
             ..ProcessOptions::default()

@@ -1,6 +1,8 @@
-tunnel: false
+before:
+  - echo base
 $development:
-  tunnel: true
+  before:
+    - echo overlay-dev
 commands:
   - name: from-overlay
     run: echo overlay

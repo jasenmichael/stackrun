@@ -35,7 +35,7 @@ stackrun --dry-run
 ```json
 {
   "configFile": "/abs/path/to/stack.config.yaml",
-  "config": { "commands": [], "tunnel": false }
+  "config": { "commands": [], "forceTunnel": false }
 }
 ```
 

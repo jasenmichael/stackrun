@@ -56,7 +56,6 @@ Top-level keys:
 | `before` | string array | `[]` | Sequential hooks before services. Failure aborts the run. |
 | `after` | string array | `[]` | Sequential hooks after commands have exited (ok, fail, or Ctrl+C). Empty/omitted is a no-op. |
 | `process` | object | see below | Process-manager options. |
-| `tunnel` | `false` or object | auto | `false` disables. Object is named-tunnel defaults (`removeExisting`). Omitted + any `tunnel.local` enables. |
 
 ### `commands`
 
@@ -66,6 +65,7 @@ Entries without a string `run` are ignored.
 | --- | --- | --- |
 | `run` | string | Shell command to run (required). |
 | `name` | string | Log prefix. Truncated to `prefixLength` (default 10) and printed as `[name]`; only that token is colored |
+| `prefix` | string | Optional log token. When set, used as-is (not sliced). Else `name` (sliced). |
 | `cwd` | string | Working directory |
 | `env` | map | Environment variables (`string` or `boolean`) |
 | `color` | string | Prefix color (`red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`) |
