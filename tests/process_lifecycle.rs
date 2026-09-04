@@ -89,6 +89,31 @@ fn before_command_failure_skips_main() {
 }
 
 #[test]
+fn process_cwd_applies_to_commands_and_hooks() {
+    let dir = tempdir().unwrap();
+    let nested = dir.path().join("nested");
+    fs::create_dir(&nested).unwrap();
+    let before = nested.join("before");
+    let ran = nested.join("ran");
+    let config = StackrunConfig {
+        process: Some(ProcessOptions {
+            cwd: Some(nested.display().to_string()),
+            ..ProcessOptions::default()
+        }),
+        before: Some(vec!["echo x > before".into()]),
+        commands: Some(vec![CommandEntry::Full(Command {
+            run: "echo x > ran".into(),
+            ..Command::default()
+        })]),
+        ..StackrunConfig::default()
+    };
+    let code = stack::run(&config).expect("run");
+    assert_eq!(code, 0);
+    assert!(before.exists(), "before hook used process.cwd");
+    assert!(ran.exists(), "command used process.cwd");
+}
+
+#[test]
 fn after_commands_run_on_failure() {
     let dir = tempdir().unwrap();
     let marker = dir.path().join("after");

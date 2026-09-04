@@ -123,6 +123,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
+      - name: Strip
+        if: runner.os != 'Windows'
+        run: strip "target/${{ matrix.target }}/release/stackrun"
       - name: Package
         shell: bash
         run: |

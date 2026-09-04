@@ -81,6 +81,11 @@ impl ProcessOptions {
         self.handle_input.unwrap_or(true)
     }
 
+    /// Default working directory when a command omits `cwd`.
+    pub fn cwd_or_none(&self) -> Option<&str> {
+        self.cwd.as_deref().filter(|s| !s.is_empty())
+    }
+
     /// Color for a command at `index`. Explicit `color` wins. Otherwise
     /// cycle `colors` / `"auto"`. `colors: false` means no color.
     pub fn resolve_prefix_color(&self, explicit: Option<&str>, index: usize) -> Option<String> {
@@ -162,6 +167,9 @@ pub struct Command {
     pub color: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tunnel: Option<CommandTunnel>,
+    /// Argv spawn for internal siblings (cloudflared). Not a config key.
+    #[serde(skip)]
+    pub argv: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -265,6 +273,12 @@ impl Command {
             }
         }
         out
+    }
+
+    /// Per-command `cwd`, else `process.cwd`.
+    pub fn effective_cwd(&self, process: Option<&ProcessOptions>) -> Option<String> {
+        nonempty_owned(self.cwd.clone())
+            .or_else(|| process.and_then(|p| nonempty_owned(p.cwd.clone())))
     }
 
     pub fn display_name(&self, prefix_length: usize) -> String {
@@ -374,5 +388,28 @@ mod tests {
         assert_eq!(cmd.sibling_log_prefix(10), "tunnel-nuxt");
         assert_eq!(cmd.sibling_color(), "cyan");
         assert_eq!(cmd.named_tunnel_name().as_deref(), Some("bugpin"));
+    }
+
+    #[test]
+    fn effective_cwd_prefers_command_then_process() {
+        let cmd = Command {
+            run: "echo".into(),
+            cwd: Some("apps/web".into()),
+            ..Command::default()
+        };
+        let process = ProcessOptions {
+            cwd: Some("apps".into()),
+            ..ProcessOptions::default()
+        };
+        assert_eq!(
+            cmd.effective_cwd(Some(&process)).as_deref(),
+            Some("apps/web")
+        );
+        let bare = Command {
+            run: "echo".into(),
+            ..Command::default()
+        };
+        assert_eq!(bare.effective_cwd(Some(&process)).as_deref(), Some("apps"));
+        assert_eq!(bare.effective_cwd(None), None);
     }
 }

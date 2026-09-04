@@ -1,6 +1,5 @@
 use crate::config::types::{PrefixColors, ProcessOptions};
 use owo_colors::OwoColorize;
-use tracing_subscriber::EnvFilter;
 
 /// Host log name. Not truncated by `prefixLength`.
 pub const HOST_NAME: &str = "stackrun";
@@ -8,15 +7,8 @@ pub const HOST_NAME: &str = "stackrun";
 /// Existing prefix palette, cycled across letters of [`HOST_NAME`].
 const RAINBOW: [&str; 6] = ["red", "green", "yellow", "blue", "magenta", "cyan"];
 
-/// Initialise tracing. `RUST_LOG` overrides; default is `warn` so lifecycle
-/// sentences are not dumped as `INFO` timestamps.
-pub fn init() {
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_target(false)
-        .try_init();
-}
+/// No-op. Host logs go through [`emit`] / [`emit_opt`], not a tracing subscriber.
+pub fn init() {}
 
 /// `colors: false` turns off host rainbow. Missing / auto / true keep it.
 pub fn host_color_enabled(process: Option<&ProcessOptions>) -> bool {

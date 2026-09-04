@@ -172,7 +172,7 @@ fn jiti_npx_escape_hatch_without_network() {
         &npx,
         format!(
             r#"#!/bin/sh
-if [ "$1" != "-p" ] || [ "$2" != "jiti" ]; then
+if [ "$1" != "-p" ] || [ "${{2%%@*}}" != "jiti" ]; then
   echo "fake-npx: expected -p jiti, got $*" >&2
   exit 90
 fi
@@ -241,7 +241,7 @@ fn stackrun_jiti_env_selects_npx() {
         &npx,
         format!(
             r#"#!/bin/sh
-if [ "$1" != "-p" ] || [ "$2" != "jiti" ]; then
+if [ "$1" != "-p" ] || [ "${{2%%@*}}" != "jiti" ]; then
   echo "fake-npx: expected -p jiti, got $*" >&2
   exit 90
 fi

@@ -39,7 +39,7 @@ stackrun --dry-run
 }
 ```
 
-`configFile` is `null` when no file was used. Exit 0 on a successful load; exit 1 on load errors. Process env is not dumped.
+`configFile` is `null` when no file was used. Exit 0 on a successful load; exit 1 on load errors. Process env is not dumped. Keys in `commands[].env` and `tunnel.env` that look like secrets (`token`, `secret`, `password`, `key`, `authorization`) are replaced with `[redacted]`.
 
 ## How it works
 

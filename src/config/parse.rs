@@ -45,7 +45,7 @@ fn parse_json5(path: &Path, contents: &str, format: &'static str) -> Result<Valu
 }
 
 fn parse_yaml(path: &Path, contents: &str) -> Result<Value, Error> {
-    let yaml: serde_yaml::Value = serde_yaml::from_str(contents).map_err(|err| Error::Parse {
+    let yaml: serde_yml::Value = serde_yml::from_str(contents).map_err(|err| Error::Parse {
         path: path.display().to_string(),
         format: "yaml",
         message: err.to_string(),

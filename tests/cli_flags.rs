@@ -360,5 +360,7 @@ fn dry_run_omits_process_env_secrets() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.contains("file-secret-token"), "{stdout}");
     assert!(!stdout.contains("env-only-secret"), "{stdout}");
+    assert!(stdout.contains("[redacted]"), "{stdout}");
+    assert!(stdout.contains("https://example.com"), "{stdout}");
     let _report = stdout_json(&output);
 }

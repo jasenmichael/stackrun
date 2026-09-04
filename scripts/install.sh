@@ -13,6 +13,10 @@ INSTALL_DIR="${STACKRUN_INSTALL:-${HOME}/.local/bin}"
 BIN_NAME=stackrun
 DRY_RUN=0
 
+if [ "$REPO" != "jasenmichael/stackrun" ] || [ "$GITHUB" != "https://github.com" ]; then
+  echo "stackrun-install: warning: STACKRUN_REPO/GITHUB override download origin ($GITHUB/$REPO)" >&2
+fi
+
 usage() {
   cat <<'EOF'
 Install stackrun from GitHub Releases.

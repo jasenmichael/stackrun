@@ -24,6 +24,7 @@ export type ProcessOptions = {
   handleInput?: boolean;
   colors?: "auto" | boolean | string | string[];
   prefixLength?: number;
+  cwd?: string;
 };
 
 export type StackrunConfig = {
