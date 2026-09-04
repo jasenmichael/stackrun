@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      registries_only:
+        description: Publish crates.io and npm only (skip binary rebuild and GitHub Release)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -43,6 +49,7 @@ jobs:
     outputs:
       should_publish: ${{ steps.check.outputs.should_publish }}
       version: ${{ steps.check.outputs.version }}
+      registries_only: ${{ steps.check.outputs.registries_only }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,6 +60,13 @@ jobs:
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           last=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.registries_only }}" = "true" ]; then
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            echo "registries_only=true" >> "$GITHUB_OUTPUT"
+            echo "crate=$version last_tag=${last:-none} registries_only=true"
+            exit 0
+          fi
+          echo "registries_only=false" >> "$GITHUB_OUTPUT"
           if [ -z "$last" ] || [ "$version" != "$last" ]; then
             echo "should_publish=true" >> "$GITHUB_OUTPUT"
           else
@@ -61,7 +75,7 @@ jobs:
           echo "crate=$version last_tag=${last:-none}"
 
   publish:
-    if: needs.version-changed.outputs.should_publish == 'true'
+    if: needs.version-changed.outputs.should_publish == 'true' && needs.version-changed.outputs.registries_only != 'true'
     needs: [test, version-changed]
     runs-on: ${{ matrix.os }}
     strategy:
@@ -116,7 +130,16 @@ jobs:
           path: stackrun-v${{ needs.version-changed.outputs.version }}-${{ matrix.target }}.*
 
   ship:
-    if: needs.version-changed.outputs.should_publish == 'true'
+    if: >-
+      always()
+      && !cancelled()
+      && needs.test.result == 'success'
+      && needs.version-changed.result == 'success'
+      && needs.version-changed.outputs.should_publish == 'true'
+      && (
+        needs.version-changed.outputs.registries_only == 'true'
+        || needs.publish.result == 'success'
+      )
     needs: [test, version-changed, publish]
     runs-on: ubuntu-latest
     permissions:
@@ -126,7 +149,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Publish crate before download-artifact writes untracked dist/ files.
+      # cargo publish --locked fails on a dirty work tree (exit 101).
+      - name: crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked
       - uses: actions/download-artifact@v4
+        if: needs.version-changed.outputs.registries_only != 'true'
         with:
           path: dist
       - uses: actions/setup-node@v4
@@ -139,6 +171,7 @@ jobs:
           npm install -g npm@latest
           npm --version
       - name: Checksums
+        if: needs.version-changed.outputs.registries_only != 'true'
         run: |
           set -euo pipefail
           : > SHA256SUMS
@@ -146,27 +179,26 @@ jobs:
             (cd "$(dirname "$f")" && sha256sum "$(basename "$f")") >> SHA256SUMS
           done < <(find dist -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print0 | sort -z)
       - name: GitHub Release
+        if: needs.version-changed.outputs.registries_only != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           version="${{ needs.version-changed.outputs.version }}"
           npm ci
-          if [ -f CHANGELOG.md ]; then
-            npx changelogen gh release "$version" || gh release create "v${version}" --title "v${version}" --notes "stackrun ${version}"
-          else
-            gh release create "v${version}" --title "v${version}" --notes "stackrun ${version}"
+          if ! gh release view "v${version}" >/dev/null 2>&1; then
+            if [ -f CHANGELOG.md ]; then
+              npx changelogen gh release "$version" || gh release create "v${version}" --title "v${version}" --notes "stackrun ${version}"
+            else
+              gh release create "v${version}" --title "v${version}" --notes "stackrun ${version}"
+            fi
           fi
           gh release upload "v${version}" SHA256SUMS dist/**/*.{tar.gz,zip} --clobber
-      - name: crates.io
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --locked
       - name: npm
         run: npm publish ./npm --access public
 
   website:
-    if: needs.version-changed.outputs.should_publish == 'true'
+    if: needs.version-changed.outputs.should_publish == 'true' && needs.version-changed.outputs.registries_only != 'true'
     needs: [test, version-changed, ship]
     uses: ./.github/workflows/docs.yml
     secrets: inherit

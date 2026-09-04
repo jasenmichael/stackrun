@@ -12,7 +12,7 @@ description = "Run multiple local services with optional Cloudflare tunnels, inc
 readme = "README.md"
 keywords = ["cli", "process", "concurrent", "cloudflare", "tunnel"]
 categories = ["command-line-utilities", "development-tools"]
-exclude = ["graphify-out/", "site/", "website/"]
+exclude = ["graphify-out/", "site/", "website/", "dist/", "SHA256SUMS"]
 
 [[bin]]
 name = "stackrun"
