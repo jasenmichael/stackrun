@@ -1,9 +1,9 @@
-use anyhow::Context;
 use clap::Parser;
 use stackrun::cli::Cli;
 use stackrun::config::{load_config, LoadOptions};
 use stackrun::logging;
 use stackrun::stack;
+use stackrun::Error;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -11,13 +11,13 @@ fn main() -> ExitCode {
     match run() {
         Ok(code) => ExitCode::from(code),
         Err(err) => {
-            logging::emit(format!("{err:#}"));
+            logging::emit(format!("{err}"));
             ExitCode::from(1)
         }
     }
 }
 
-fn run() -> anyhow::Result<u8> {
+fn run() -> Result<u8, Error> {
     let cli = Cli::parse();
 
     if cli.print_version {
@@ -26,10 +26,12 @@ fn run() -> anyhow::Result<u8> {
     }
 
     let options = LoadOptions::from_cli(&cli);
-    let loaded = load_config(options).context("failed to load Stackrun config")?;
+    let loaded = load_config(options)?;
 
     if cli.dry_run {
-        println!("{}", stackrun::format_dry_run(&loaded)?);
+        let json = stackrun::format_dry_run(&loaded)
+            .map_err(|err| Error::Message(format!("failed to format dry-run JSON: {err}")))?;
+        println!("{json}");
         return Ok(0);
     }
 

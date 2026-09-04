@@ -5,9 +5,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("No config file found")]
-    NoConfigPath,
-
     #[error("No valid configuration found at {path}")]
     ConfigNotFound { path: String },
 

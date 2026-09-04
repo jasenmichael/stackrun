@@ -20,8 +20,56 @@ pub struct ConcurrentOutcome {
     pub interrupted: bool,
 }
 
+/// Shared child list + SIGINT flag. Install once in [`crate::stack::run`].
+#[derive(Clone)]
+pub struct InterruptState {
+    children: Arc<Mutex<Vec<ChildHandle>>>,
+    shutting_down: Arc<AtomicBool>,
+}
+
+impl InterruptState {
+    pub fn new() -> Self {
+        Self {
+            children: Arc::new(Mutex::new(Vec::new())),
+            shutting_down: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn install_handler(&self) {
+        let shutting_down = Arc::clone(&self.shutting_down);
+        let children = Arc::clone(&self.children);
+        let _ = ctrlc::set_handler(move || {
+            shutting_down.store(true, Ordering::SeqCst);
+            kill_all(&children);
+        });
+    }
+
+    fn mark_stopped(&self) {
+        self.shutting_down.store(true, Ordering::SeqCst);
+    }
+
+    fn register(&self, handle: ChildHandle) {
+        if let Ok(mut lock) = self.children.lock() {
+            lock.push(handle);
+        }
+    }
+
+    pub fn is_shutting_down(&self) -> bool {
+        self.shutting_down.load(Ordering::SeqCst)
+    }
+}
+
+impl Default for InterruptState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Spawn and join concurrent commands. Does not run hooks or tunnels.
-pub fn run_concurrent(run: ConcurrentRun) -> Result<ConcurrentOutcome, Error> {
+pub fn run_concurrent(
+    run: ConcurrentRun,
+    interrupt: &InterruptState,
+) -> Result<ConcurrentOutcome, Error> {
     let prefix_length = run.options.prefix_length_or_default();
     let kill_on_failure = run.options.kill_others_on_failure();
     let handle_input = run.options.handle_input_or_default();
@@ -29,17 +77,6 @@ pub fn run_concurrent(run: ConcurrentRun) -> Result<ConcurrentOutcome, Error> {
     let apply_tunnel_env = run.apply_tunnel_env;
 
     let failed = Arc::new(AtomicBool::new(false));
-    let shutting_down = Arc::new(AtomicBool::new(false));
-    let children: Arc<Mutex<Vec<ChildHandle>>> = Arc::new(Mutex::new(Vec::new()));
-
-    {
-        let shutting_down = Arc::clone(&shutting_down);
-        let children = Arc::clone(&children);
-        let _ = ctrlc::set_handler(move || {
-            shutting_down.store(true, Ordering::SeqCst);
-            kill_all(&children);
-        });
-    }
 
     let mut joins = Vec::new();
     for (index, spec) in run.commands.into_iter().enumerate() {
@@ -52,8 +89,7 @@ pub fn run_concurrent(run: ConcurrentRun) -> Result<ConcurrentOutcome, Error> {
             handle_input,
             kill_on_failure,
             &failed,
-            &shutting_down,
-            &children,
+            interrupt,
             &mut joins,
         );
     }
@@ -73,7 +109,7 @@ pub fn run_concurrent(run: ConcurrentRun) -> Result<ConcurrentOutcome, Error> {
 
     Ok(ConcurrentOutcome {
         worst_code: worst,
-        interrupted: shutting_down.load(Ordering::SeqCst),
+        interrupted: interrupt.is_shutting_down(),
     })
 }
 
@@ -87,8 +123,7 @@ fn spawn_one(
     handle_input: bool,
     kill_on_failure: bool,
     failed: &Arc<AtomicBool>,
-    shutting_down: &Arc<AtomicBool>,
-    children: &Arc<Mutex<Vec<ChildHandle>>>,
+    interrupt: &InterruptState,
     joins: &mut Vec<thread::JoinHandle<Result<u8, Error>>>,
 ) {
     let name = {
@@ -102,20 +137,20 @@ fn spawn_one(
     let color = conc_opts.resolve_prefix_color(spec.color.as_deref(), index);
     let host_color = logging::host_color_enabled(Some(conc_opts));
     let failed = Arc::clone(failed);
-    let shutting_down = Arc::clone(shutting_down);
-    let children = Arc::clone(children);
+    let interrupt = interrupt.clone();
+    let default_cwd = conc_opts.cwd.clone();
     joins.push(thread::spawn(move || {
         run_command(
             name,
             spec,
             color,
             host_color,
-            children,
+            interrupt,
             failed,
-            shutting_down,
             kill_on_failure,
             handle_input,
             tunnel_enabled,
+            default_cwd,
         )
     }));
 }
@@ -127,15 +162,44 @@ struct ChildHandle {
 }
 
 /// Sequential shell hook (`before` / `after`). Stdio inherit.
-pub fn run_hook(command: &str, env: &[(String, String)], before: bool) -> Result<(), Error> {
+pub fn run_hook(
+    command: &str,
+    env: &[(String, String)],
+    before: bool,
+    cwd: Option<&str>,
+    interrupt: &InterruptState,
+) -> Result<(), Error> {
     let mut cmd = shell_command(command);
     for (k, v) in env {
         cmd.env(k, v);
     }
+    if let Some(cwd) = cwd.filter(|s| !s.is_empty()) {
+        cmd.current_dir(cwd);
+    }
     cmd.stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
-    let status = cmd.status()?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+
+    let mut child = cmd.spawn()?;
+    let id = child.id();
+    interrupt.register(ChildHandle {
+        #[cfg(unix)]
+        pgid: Some(id as i32),
+        child_id: id,
+    });
+    let status = child.wait()?;
+    if interrupt.is_shutting_down() {
+        if before {
+            return Err(Error::Message("interrupted by signal".into()));
+        }
+        return Ok(());
+    }
     if !status.success() {
         if before {
             return Err(Error::BeforeCommandFailed {
@@ -157,15 +221,20 @@ fn run_command(
     spec: Command,
     color: Option<String>,
     host_color: bool,
-    children: Arc<Mutex<Vec<ChildHandle>>>,
+    interrupt: InterruptState,
     failed: Arc<AtomicBool>,
-    shutting_down: Arc<AtomicBool>,
     kill_on_failure: bool,
     handle_input: bool,
     tunnel_enabled: bool,
+    default_cwd: Option<String>,
 ) -> Result<u8, Error> {
-    let mut cmd = shell_command(&spec.run);
-    if let Some(cwd) = &spec.cwd {
+    let mut cmd = spawn_command(&spec);
+    if let Some(cwd) = spec
+        .cwd
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .or_else(|| default_cwd.as_deref().filter(|s| !s.is_empty()))
+    {
         cmd.current_dir(cwd);
     }
     for (k, v) in spec.effective_env(tunnel_enabled) {
@@ -187,15 +256,11 @@ fn run_command(
 
     let mut child = cmd.spawn()?;
     let id = child.id();
-
-    {
-        let mut lock = children.lock().unwrap();
-        lock.push(ChildHandle {
-            #[cfg(unix)]
-            pgid: Some(id as i32),
-            child_id: id,
-        });
-    }
+    interrupt.register(ChildHandle {
+        #[cfg(unix)]
+        pgid: Some(id as i32),
+        child_id: id,
+    });
 
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -222,7 +287,7 @@ fn run_command(
     }
 
     let code = status.code().unwrap_or(1) as u8;
-    let shutting = shutting_down.load(Ordering::SeqCst);
+    let shutting = interrupt.is_shutting_down();
     logging::emit_opt(
         format!(
             "Command {name} {}",
@@ -237,7 +302,8 @@ fn run_command(
     if code != 0 {
         let first_failure = !failed.swap(true, Ordering::SeqCst);
         if kill_on_failure {
-            kill_all(&children);
+            interrupt.mark_stopped();
+            kill_all(&interrupt.children);
         }
         return Ok(if first_failure { code } else { 0 });
     }
@@ -273,6 +339,15 @@ fn prefix_pipe<R: std::io::Read>(pipe: R, name: &str, color: Option<&str>, is_er
 fn format_prefixed_line(name: &str, line: &str, color: Option<&str>) -> String {
     let prefix = logging::colorize(&format!("[{name}]"), color);
     format!("{prefix} {line}")
+}
+
+fn spawn_command(spec: &Command) -> StdCommand {
+    if let Some(argv) = spec.argv.as_ref().filter(|a| !a.is_empty()) {
+        let mut cmd = StdCommand::new(&argv[0]);
+        cmd.args(&argv[1..]);
+        return cmd;
+    }
+    shell_command(&spec.run)
 }
 
 fn shell_command(command: &str) -> StdCommand {
@@ -417,5 +492,33 @@ mod tests {
         let out = format_prefixed_line("echo", "hi", None);
         assert_eq!(out, "[echo] hi");
         assert!(!out.contains('\u{1b}'));
+    }
+
+    #[test]
+    fn argv_spawn_skips_shell() {
+        let spec = Command {
+            run: "echo ignored; true".into(),
+            argv: Some(vec!["cloudflared".into(), "tunnel".into(), "--url".into()]),
+            ..Command::default()
+        };
+        let cmd = spawn_command(&spec);
+        assert_eq!(cmd.get_program(), "cloudflared");
+        let args: Vec<_> = cmd.get_args().collect();
+        assert_eq!(args, ["tunnel", "--url"]);
+    }
+
+    #[test]
+    fn empty_argv_uses_shell() {
+        let spec = Command {
+            run: "echo hi".into(),
+            argv: Some(Vec::new()),
+            ..Command::default()
+        };
+        let cmd = spawn_command(&spec);
+        if cfg!(windows) {
+            assert_eq!(cmd.get_program(), "cmd");
+        } else {
+            assert_eq!(cmd.get_program(), "sh");
+        }
     }
 }

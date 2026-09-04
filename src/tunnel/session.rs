@@ -1,9 +1,9 @@
 use super::cloudflared::{default_config_dir, CloudflaredOps};
 use super::TunnelRuntime;
 use crate::error::Error;
+use crate::logging;
 use std::fs;
 use std::path::{Path, PathBuf};
-use tracing::{info, warn};
 
 /// Named-tunnel resource for one command: id, creds dir. Not a log prefix.
 #[derive(Debug)]
@@ -67,7 +67,7 @@ pub fn setup_named(
 }
 
 pub fn cleanup(runtime: &TunnelRuntime, session: &TunnelSession) {
-    info!("Cleaning up named tunnel: {}", session.tunnel_name);
+    logging::emit(format!("Cleaning up named tunnel: {}", session.tunnel_name));
     if let Err(err) = delete_named_tunnel(
         runtime.cloudflared.as_ref(),
         &session.config_dir,
@@ -75,14 +75,14 @@ pub fn cleanup(runtime: &TunnelRuntime, session: &TunnelSession) {
         true,
         true,
     ) {
-        warn!("tunnel delete: {err}");
+        logging::emit(format!("tunnel delete: {err}"));
     }
     let cred = session
         .config_dir
         .join(format!("{}.json", session.tunnel_id));
     if cred.exists() {
         if let Err(err) = fs::remove_file(&cred) {
-            warn!("remove {}: {err}", cred.display());
+            logging::emit(format!("remove {}: {err}", cred.display()));
         }
     }
 }
@@ -97,7 +97,7 @@ fn delete_named_tunnel(
     let existing = match cf.list_tunnels() {
         Ok(rows) => rows,
         Err(err) if warn_only => {
-            warn!("Could not check or delete tunnel: {err}");
+            logging::emit(format!("Could not check or delete tunnel: {err}"));
             return Ok(());
         }
         Err(err) => return Err(err),
@@ -110,10 +110,10 @@ fn delete_named_tunnel(
             name: tunnel_name.to_string(),
         });
     }
-    info!("Removing existing tunnel: {tunnel_name}");
+    logging::emit(format!("Removing existing tunnel: {tunnel_name}"));
     if let Err(err) = cf.delete_tunnel(tunnel_name) {
         if warn_only {
-            warn!("Could not check or delete tunnel: {err}");
+            logging::emit(format!("Could not check or delete tunnel: {err}"));
             return Ok(());
         }
         return Err(err);
@@ -132,8 +132,28 @@ pub fn named_run_command(session: &TunnelSession) -> String {
     )
 }
 
+pub fn named_run_argv(session: &TunnelSession) -> Vec<String> {
+    vec![
+        session.binary.clone(),
+        "tunnel".into(),
+        "run".into(),
+        "--url".into(),
+        session.local.clone(),
+        session.tunnel_name.clone(),
+    ]
+}
+
 pub fn quick_run_command(binary: &str, local: &str) -> String {
     format!("{binary} tunnel --url {local}")
+}
+
+pub fn quick_run_argv(binary: &str, local: &str) -> Vec<String> {
+    vec![
+        binary.to_string(),
+        "tunnel".into(),
+        "--url".into(),
+        local.to_string(),
+    ]
 }
 
 #[cfg(test)]
@@ -243,8 +263,23 @@ mod tests {
             "cloudflared tunnel run --url http://127.0.0.1:4000 api"
         );
         assert_eq!(
+            named_run_argv(&sess),
+            vec![
+                "cloudflared",
+                "tunnel",
+                "run",
+                "--url",
+                "http://127.0.0.1:4000",
+                "api"
+            ]
+        );
+        assert_eq!(
             quick_run_command("cloudflared", "http://127.0.0.1:3000"),
             "cloudflared tunnel --url http://127.0.0.1:3000"
+        );
+        assert_eq!(
+            quick_run_argv("cloudflared", "http://127.0.0.1:3000"),
+            vec!["cloudflared", "tunnel", "--url", "http://127.0.0.1:3000"]
         );
     }
 }

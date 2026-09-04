@@ -1,8 +1,10 @@
 use crate::cli::JitiMode;
 use crate::error::Error;
 use serde_json::Value;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 const JITI_MISSING_CODE: i32 = 3;
 
@@ -56,7 +58,7 @@ enum BridgeResult {
 /// Load a JS/TS config by spawning Node + Jiti. Never embeds a JS runtime.
 ///
 /// Local first: `node` + `import("jiti")` from `cwd`. If jiti is missing and
-/// `mode` is [`JitiMode::Npx`], retry via `npx -p jiti node ...`. Never installs
+/// `mode` is [`JitiMode::Npx`], retry via `npx -p jiti@2 node ...`. Never installs
 /// into the project.
 pub fn load_js_ts(path: &Path, cwd: &Path, mode: JitiMode) -> Result<Value, Error> {
     let node = which("node").ok_or_else(|| Error::NodeRequired {
@@ -83,11 +85,11 @@ fn load_via_npx(path: &Path, cwd: &Path) -> Result<Value, Error> {
         path: path.to_path_buf(),
     })?;
 
-    match run_bridge(&npx, &["-p", "jiti", "node"], path, cwd)? {
+    match run_bridge(&npx, &["-p", "jiti@2", "node"], path, cwd)? {
         BridgeResult::Config(value) => Ok(value),
         BridgeResult::JitiMissing => Err(Error::JsBridge {
             path: path.to_path_buf(),
-            message: "npx -p jiti could not import jiti. First run may need network.".into(),
+            message: "npx -p jiti@2 could not import jiti. First run may need network.".into(),
         }),
         BridgeResult::Failed(message) => Err(Error::JsBridge {
             path: path.to_path_buf(),
@@ -106,8 +108,10 @@ fn run_bridge(
     interpret(path, output)
 }
 
+const BRIDGE_TIMEOUT: Duration = Duration::from_secs(60);
+
 fn spawn_bridge(program: &Path, prefix: &[&str], path: &Path, cwd: &Path) -> Result<Output, Error> {
-    Ok(Command::new(program)
+    let mut child = Command::new(program)
         .args(prefix)
         .arg("--input-type=module")
         .arg("-e")
@@ -117,7 +121,34 @@ fn spawn_bridge(program: &Path, prefix: &[&str], path: &Path, cwd: &Path) -> Res
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()?)
+        .spawn()?;
+    let mut stdout = child.stdout.take().unwrap_or_else(|| unreachable!());
+    let mut stderr = child.stderr.take().unwrap_or_else(|| unreachable!());
+    let mut out_buf = Vec::new();
+    let mut err_buf = Vec::new();
+    let deadline = Instant::now() + BRIDGE_TIMEOUT;
+    loop {
+        match child.try_wait()? {
+            Some(status) => {
+                let _ = stdout.read_to_end(&mut out_buf);
+                let _ = stderr.read_to_end(&mut err_buf);
+                return Ok(Output {
+                    status,
+                    stdout: out_buf,
+                    stderr: err_buf,
+                });
+            }
+            None if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(Error::JsBridge {
+                    path: path.to_path_buf(),
+                    message: format!("timed out after {}s", BRIDGE_TIMEOUT.as_secs()),
+                });
+            }
+            None => std::thread::sleep(Duration::from_millis(50)),
+        }
+    }
 }
 
 fn interpret(path: &Path, output: Output) -> Result<BridgeResult, Error> {

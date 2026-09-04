@@ -8,7 +8,8 @@ pub use cloudflared::{
     default_config_dir, CloudflaredOps, MockCloudflared, RealCloudflared, TunnelRow,
 };
 pub use session::{
-    cleanup, hostname_from_public, named_run_command, quick_run_command, setup_named, TunnelSession,
+    cleanup, hostname_from_public, named_run_argv, named_run_command, quick_run_argv,
+    quick_run_command, setup_named, TunnelSession,
 };
 
 #[derive(Clone)]

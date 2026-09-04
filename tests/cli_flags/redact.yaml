@@ -1,3 +1,9 @@
-# Dry-run must not dump process env (this file has no secrets).
+# Dry-run must not dump process env or config secrets.
 commands:
   - run: echo x
+    env:
+      API_TOKEN: file-secret-token
+      PUBLIC_URL: https://example.com
+    tunnel:
+      env:
+        CF_PASSWORD: file-secret-token

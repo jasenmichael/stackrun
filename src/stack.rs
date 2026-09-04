@@ -40,6 +40,13 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
     }
 
     let exec_env: Vec<(String, String)> = std::env::vars().collect();
+    let interrupt = process::InterruptState::new();
+    interrupt.install_handler();
+    let hook_cwd = config
+        .process
+        .as_ref()
+        .and_then(|p| p.cwd_or_none())
+        .map(str::to_string);
 
     if config.before_commands().is_empty() {
         logging::emit_opt("No before hooks to run", host_color);
@@ -47,7 +54,7 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
         logging::emit_opt("Running before hooks", host_color);
         for command in config.before_commands() {
             logging::emit_opt(format!("Running before hook: {command}"), host_color);
-            process::run_hook(command, &exec_env, true)?;
+            process::run_hook(command, &exec_env, true, hook_cwd.as_deref(), &interrupt)?;
         }
     }
 
@@ -86,18 +93,22 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
         return Err(Error::NoCommands);
     }
 
+    let default_cwd = hook_cwd.as_deref();
     for cmd in &cmds {
-        logging::emit_opt(command_start_line(cmd), host_color);
+        logging::emit_opt(command_start_line(cmd, default_cwd), host_color);
         if tunnel_on && cmd.tunnel_local().is_some() {
             logging::emit_opt(tunnel_start_line(cmd, prefix_length), host_color);
         }
     }
 
-    let outcome = match process::run_concurrent(ConcurrentRun {
-        commands: specs,
-        options: config.process.clone().unwrap_or_default(),
-        apply_tunnel_env: tunnel_on,
-    }) {
+    let outcome = match process::run_concurrent(
+        ConcurrentRun {
+            commands: specs,
+            options: config.process.clone().unwrap_or_default(),
+            apply_tunnel_env: tunnel_on,
+        },
+        &interrupt,
+    ) {
         Ok(outcome) => outcome,
         Err(err) => {
             for sess in &sessions {
@@ -119,7 +130,7 @@ pub fn run_with_tunnel(config: &StackrunConfig, runtime: TunnelRuntime) -> Resul
         logging::emit_opt("Running after hooks", host_color);
         for command in config.after_commands() {
             logging::emit_opt(format!("Running after hook: {command}"), host_color);
-            process::run_hook(command, &exec_env, false)?;
+            process::run_hook(command, &exec_env, false, hook_cwd.as_deref(), &interrupt)?;
         }
     }
 
@@ -148,6 +159,7 @@ fn setup_sibling(
         let sess = tunnel::setup_named(runtime, &name, local, public, remove)?;
         let sibling = Command {
             run: tunnel::named_run_command(&sess),
+            argv: Some(tunnel::named_run_argv(&sess)),
             prefix: Some(log.clone()),
             name: Some(log),
             color: Some(cmd.sibling_color()),
@@ -157,6 +169,7 @@ fn setup_sibling(
     } else {
         let sibling = Command {
             run: tunnel::quick_run_command(&binary, local),
+            argv: Some(tunnel::quick_run_argv(&binary, local)),
             prefix: Some(log.clone()),
             name: Some(log),
             color: Some(cmd.sibling_color()),
@@ -167,11 +180,16 @@ fn setup_sibling(
 }
 
 /// Human start line for a user command (stderr, not prefixed child output).
-fn command_start_line(cmd: &Command) -> String {
+fn command_start_line(cmd: &Command, default_cwd: Option<&str>) -> String {
     let name = cmd
         .resolved_prefix_raw()
         .unwrap_or_else(|| "command".into());
-    match cmd.cwd.as_deref().filter(|s| !s.is_empty()) {
+    let cwd = cmd
+        .cwd
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .or_else(|| default_cwd.filter(|s| !s.is_empty()));
+    match cwd {
         Some(cwd) => format!("Starting [{name}] {} in {cwd}", cmd.run),
         None => format!("Starting [{name}] {}", cmd.run),
     }
@@ -250,7 +268,7 @@ mod tests {
             ..Command::default()
         };
         assert_eq!(
-            logging::format_host_line(&command_start_line(&cmd), false),
+            logging::format_host_line(&command_start_line(&cmd, None), false),
             "[stackrun] Starting [nuxt] nuxt dev --port 3001 --host"
         );
         let with_cwd = Command {
@@ -258,7 +276,7 @@ mod tests {
             ..cmd
         };
         assert_eq!(
-            logging::format_host_line(&command_start_line(&with_cwd), false),
+            logging::format_host_line(&command_start_line(&with_cwd, None), false),
             "[stackrun] Starting [nuxt] nuxt dev --port 3001 --host in apps/web"
         );
         let unnamed = Command {
@@ -266,7 +284,15 @@ mod tests {
             ..Command::default()
         };
         assert_eq!(
-            logging::format_host_line(&command_start_line(&unnamed), false),
+            logging::format_host_line(&command_start_line(&unnamed, Some("apps")), false),
+            "[stackrun] Starting [command] echo hi in apps"
+        );
+        let unnamed = Command {
+            run: "echo hi".into(),
+            ..Command::default()
+        };
+        assert_eq!(
+            logging::format_host_line(&command_start_line(&unnamed, None), false),
             "[stackrun] Starting [command] echo hi"
         );
     }

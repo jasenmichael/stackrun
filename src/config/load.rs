@@ -3,7 +3,7 @@ use super::dotenv::load_dotenv;
 use super::merge::{apply_env_overlay, defu, take_extends};
 use super::parse::{parse_file, parse_json_overlay};
 use super::rc::parse_rc_file;
-use super::types::StackrunConfig;
+use super::types::{CommandEntry, EnvValue, StackrunConfig};
 use crate::bridge;
 use crate::cli::{Cli, JitiMode};
 use crate::error::Error;
@@ -176,9 +176,44 @@ fn apply_cli_overrides(config: &mut StackrunConfig, options: &LoadOptions) {
     }
 }
 
-/// No file-level secrets remain after dropping API tokens. Kept so `--dry-run`
-/// stays a single load-then-print path.
-pub fn redact_secrets(_config: &mut StackrunConfig) {}
+const REDACTED: &str = "[redacted]";
+
+fn is_secret_key(key: &str) -> bool {
+    let k = key.to_ascii_lowercase();
+    k.contains("token")
+        || k.contains("secret")
+        || k.contains("password")
+        || k.contains("authorization")
+        || k.contains("key")
+}
+
+fn redact_env_map(map: &mut std::collections::BTreeMap<String, EnvValue>) {
+    for (key, value) in map.iter_mut() {
+        if is_secret_key(key) {
+            *value = EnvValue::String(REDACTED.into());
+        }
+    }
+}
+
+/// Redact likely secrets in command/tunnel env maps for `--dry-run`.
+pub fn redact_secrets(config: &mut StackrunConfig) {
+    let Some(commands) = config.commands.as_mut() else {
+        return;
+    };
+    for entry in commands {
+        let CommandEntry::Full(cmd) = entry else {
+            continue;
+        };
+        if let Some(env) = cmd.env.as_mut() {
+            redact_env_map(env);
+        }
+        if let Some(tunnel) = cmd.tunnel.as_mut() {
+            if let Some(env) = tunnel.env.as_mut() {
+                redact_env_map(env);
+            }
+        }
+    }
+}
 
 /// Effective config for `--dry-run`: loaded config with secrets redacted.
 /// Does not spawn processes or tunnels.
@@ -368,5 +403,20 @@ mod tests {
         let json = format_dry_run(&loaded).unwrap();
         assert!(!json.contains("PATH="), "{json}");
         assert!(report.config_file.is_some());
+    }
+
+    #[test]
+    fn redact_secrets_masks_sensitive_env_keys() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("stack.config.yaml"),
+            "commands:\n  - run: echo hi\n    env:\n      API_TOKEN: file-secret-token\n      PUBLIC_URL: https://example.com\n    tunnel:\n      env:\n        CF_PASSWORD: file-secret-token\n",
+        )
+        .unwrap();
+        let loaded = load_config(LoadOptions::for_cwd(dir.path())).unwrap();
+        let json = format_dry_run(&loaded).unwrap();
+        assert!(!json.contains("file-secret-token"), "{json}");
+        assert!(json.contains("[redacted]"), "{json}");
+        assert!(json.contains("https://example.com"), "{json}");
     }
 }

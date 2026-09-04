@@ -1,5 +1,15 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -128,8 +138,19 @@ function extractArchive(archivePath, destDir, kind) {
     if (res.status !== 0) {
       const ps = spawnSync(
         "powershell",
-        ["-NoProfile", "-Command", `Expand-Archive -Force -Path '${archivePath}' -DestinationPath '${destDir}'`],
-        { encoding: "utf8" },
+        [
+          "-NoProfile",
+          "-Command",
+          "Expand-Archive -Force -LiteralPath $env:STACKRUN_ZIP -DestinationPath $env:STACKRUN_DEST",
+        ],
+        {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            STACKRUN_ZIP: archivePath,
+            STACKRUN_DEST: destDir,
+          },
+        },
       );
       if (ps.status !== 0) {
         throw new Error(ps.stderr || res.stderr || "extract zip failed");
@@ -164,8 +185,11 @@ export function ensureBinary() {
 
   const spec = TARGETS[platformKey()];
   if (!spec) {
+    const key = platformKey();
     const err = new Error(
-      `stackrun has no GitHub Release binary for ${platformKey()}. Set STACKRUN_BINARY or build from source.`,
+      key.includes("musl")
+        ? "no published linux-musl binary; use a glibc host or build from source"
+        : `stackrun has no GitHub Release binary for ${key}. Set STACKRUN_BINARY or build from source.`,
     );
     err.code = "STACKRUN_BINARY_MISSING";
     throw err;
@@ -185,19 +209,38 @@ export function ensureBinary() {
   if (!found) {
     throw new Error(`archive ${archiveName} had no ${binaryName()}`);
   }
-  mkdirSync(cacheDir(version), { recursive: true });
-  writeFileSync(cached, readFileSync(found));
-  try {
-    const { chmodSync } = require("node:fs");
-    chmodSync(cached, 0o755);
-  } catch {
-    // windows
-  }
+  writeCachedBinary(cached, found);
   return cached;
 }
 
+function assertRealDir(dir) {
+  mkdirSync(dir, { recursive: true });
+  const st = lstatSync(dir);
+  if (st.isSymbolicLink()) {
+    throw new Error(`stackrun cache path is a symlink: ${dir}`);
+  }
+  if (!st.isDirectory()) {
+    throw new Error(`stackrun cache path is not a directory: ${dir}`);
+  }
+}
+
+function writeCachedBinary(cached, found) {
+  const dir = dirname(cached);
+  assertRealDir(dir);
+  if (existsSync(cached) && lstatSync(cached).isSymbolicLink()) {
+    throw new Error(`stackrun cache file is a symlink: ${cached}`);
+  }
+  const tmp = `${cached}.${process.pid}.tmp`;
+  writeFileSync(tmp, readFileSync(found));
+  try {
+    chmodSync(tmp, 0o755);
+  } catch {
+    // windows
+  }
+  renameSync(tmp, cached);
+}
+
 function findFile(root, name) {
-  const { readdirSync, statSync } = require("node:fs");
   const stack = [root];
   while (stack.length) {
     const dir = stack.pop();

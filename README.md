@@ -317,7 +317,7 @@ stackrun --dry-run
 }
 ```
 
-`configFile` is `null` when no file was used. Exit 0 on a successful load; exit 1 on load errors. Process env is not dumped.
+`configFile` is `null` when no file was used. Exit 0 on a successful load; exit 1 on load errors. Process env is not dumped. Keys in `commands[].env` and `tunnel.env` that look like secrets (`token`, `secret`, `password`, `key`, `authorization`) are replaced with `[redacted]`.
 
 ## Configuration
 
@@ -408,9 +408,10 @@ process:
   handleInput: true
   colors: auto
   prefixLength: 10
+  cwd: .
 ```
 
-Stackrun starts every `commands` entry at once. It honors `killOthers`, `prefixLength`, `handleInput` (stdin inherit vs null), and `colors: auto`.
+Stackrun starts every `commands` entry at once. It honors `killOthers`, `prefixLength`, `handleInput` (stdin inherit vs null), `colors: auto`, and `process.cwd` (default working directory for commands and hooks that omit `cwd`).
 
 Child logs look like `[api] …`. Color is on the bracketed name only.
 
@@ -461,7 +462,7 @@ Needs `node` on PATH and `jiti` importable from this project (`npm i -D jiti`). 
 
 If local jiti is missing, switch to YAML/TOML/JSON, install jiti in the project, or retry with `--jiti npx`.
 
-That runs `npx -p jiti node ...` so jiti is on that process's module path. First run may download jiti (needs network).
+That runs `npx -p jiti@2 node ...` so jiti is on that process's module path. First run may download jiti (needs network).
 
 Stackrun never runs `npm i` for you and never defaults to `npx`.
 

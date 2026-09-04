@@ -6,7 +6,7 @@ pub enum JitiMode {
     /// `node` + `import("jiti")` from the project directory only.
     #[default]
     Local,
-    /// After a local miss, retry with `npx -p jiti node ...`.
+    /// After a local miss, retry with `npx -p jiti@2 node ...`.
     Npx,
 }
 
@@ -45,7 +45,7 @@ pub struct Cli {
     pub dry_run: bool,
 
     /// Resolve jiti for JS/TS configs. `local` uses the project only.
-    /// `npx` retries via `npx -p jiti` (first run may need network).
+    /// `npx` retries via `npx -p jiti@2` (first run may need network).
     #[arg(long = "jiti", env = "STACKRUN_JITI", value_enum, default_value_t = JitiMode::Local)]
     pub jiti: JitiMode,
 

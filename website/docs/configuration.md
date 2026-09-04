@@ -89,9 +89,14 @@ process:
   handleInput: true
   colors: auto
   prefixLength: 10
+  cwd: .
 ```
 
+`process.cwd` is the default working directory for commands and hooks that omit `cwd`. A per-command `cwd` wins.
+
 Child logs look like `[api] …`. Color is on the bracketed name only.
+
+`extends: [a, b]` treats `a` as higher-priority defaults than `b` (main file and `.stackrc` still win over both).
 
 ## Environment variables
 
