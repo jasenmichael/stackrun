@@ -3,4 +3,3 @@ node_modules
 build
 .cache-loader
 graphify-out
-static/install.sh
