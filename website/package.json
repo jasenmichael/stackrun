@@ -4,8 +4,7 @@
   "private": true,
   "scripts": {
     "docusaurus": "docusaurus",
-    "start": "node copy-static.mjs && docusaurus start",
-    "prebuild": "node copy-static.mjs",
+    "start": "docusaurus start",
     "build": "docusaurus build",
     "serve": "docusaurus serve",
     "clear": "docusaurus clear"

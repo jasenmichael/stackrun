@@ -43,7 +43,7 @@ jobs:
         env:
           STACKRUN_BINARY: ${{ github.workspace }}/target/debug/stackrun
           STACKRUN_SKIP_DOWNLOAD: "1"
-      - run: bash -n scripts/install.sh
+      - run: bash -n website/static/install.sh
       - name: Build website
         working-directory: website
         run: |
