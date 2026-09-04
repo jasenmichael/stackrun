@@ -95,7 +95,7 @@ See `Cargo.toml`. Short why:
 
 - Native binaries on merge to `main` (six targets; no musl, no `cross`).
 - One npm package `stackrun`: `bin` + `import { stackrun }`. Install downloads the matching GitHub Release binary. No `@jasenmichael/stackrun-*` packages.
-- Publish from `release.yml` when the crate version is newer than the last tag. No laptop `npm publish` / `cargo publish`. npm uses trusted publishers (OIDC on the `ship` job). crates.io uses `CARGO_REGISTRY_TOKEN`.
+- Publish from `release.yml` when the crate version is newer than the last tag. No laptop `npm publish` / `cargo publish`. npm uses trusted publishers (OIDC on the `ship` job; no `NODE_AUTH_TOKEN`). crates.io uses `CARGO_REGISTRY_TOKEN`. Skip cargo if that version is already on crates.io. Dispatch `npm_only` to republish npm after a crates-only success.
 - Dynamic docs: automd + changelogen in the release PR (no tag from the laptop).
 - GitHub Pages: Docusaurus `website/` publishes to `gh-pages` on every `main` push and on each release. Curl install: `https://jasenmichael.github.io/stackrun/install.sh`.
 - Post-1.0 ideas: [ROADMAP.md](ROADMAP.md).
