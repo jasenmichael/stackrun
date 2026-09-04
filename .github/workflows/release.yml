@@ -10,6 +10,10 @@ on:
         description: Publish crates.io and npm only (skip binary rebuild and GitHub Release)
         type: boolean
         default: false
+      npm_only:
+        description: Publish npm only (skip cargo, binaries, and GitHub Release)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -50,6 +54,7 @@ jobs:
       should_publish: ${{ steps.check.outputs.should_publish }}
       version: ${{ steps.check.outputs.version }}
       registries_only: ${{ steps.check.outputs.registries_only }}
+      npm_only: ${{ steps.check.outputs.npm_only }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,13 +65,19 @@ jobs:
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           last=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.registries_only }}" = "true" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && { [ "${{ inputs.npm_only }}" = "true" ] || [ "${{ inputs.registries_only }}" = "true" ]; }; then
             echo "should_publish=true" >> "$GITHUB_OUTPUT"
             echo "registries_only=true" >> "$GITHUB_OUTPUT"
-            echo "crate=$version last_tag=${last:-none} registries_only=true"
+            if [ "${{ inputs.npm_only }}" = "true" ]; then
+              echo "npm_only=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "npm_only=false" >> "$GITHUB_OUTPUT"
+            fi
+            echo "crate=$version last_tag=${last:-none} registries_only=true npm_only=${{ inputs.npm_only }}"
             exit 0
           fi
           echo "registries_only=false" >> "$GITHUB_OUTPUT"
+          echo "npm_only=false" >> "$GITHUB_OUTPUT"
           if [ -z "$last" ] || [ "$version" != "$last" ]; then
             echo "should_publish=true" >> "$GITHUB_OUTPUT"
           else
@@ -153,18 +164,28 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # Publish crate before download-artifact writes untracked dist/ files.
       # cargo publish --locked fails on a dirty work tree (exit 101).
+      # Skip when npm_only, or when this version is already on crates.io.
       - name: crates.io
+        if: needs.version-changed.outputs.npm_only != 'true'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --locked
+        run: |
+          set -euo pipefail
+          version="${{ needs.version-changed.outputs.version }}"
+          if curl -fsS -A "stackrun-ci" "https://crates.io/api/v1/crates/stackrun/${version}" >/dev/null; then
+            echo "crates.io already has ${version}; skip cargo publish"
+            exit 0
+          fi
+          cargo publish --locked
       - uses: actions/download-artifact@v4
         if: needs.version-changed.outputs.registries_only != 'true'
         with:
           path: dist
+      # No registry-url: setup-node would write always-auth + NODE_AUTH_TOKEN
+      # and block npm trusted-publisher OIDC (E404 on PUT).
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          registry-url: https://registry.npmjs.org
       - name: Ensure npm 11.5.1+
         run: |
           set -euo pipefail
@@ -195,10 +216,18 @@ jobs:
           fi
           gh release upload "v${version}" SHA256SUMS dist/**/*.{tar.gz,zip} --clobber
       - name: npm
-        run: npm publish ./npm --access public
+        env:
+          NODE_AUTH_TOKEN: ""
+        run: |
+          unset NODE_AUTH_TOKEN
+          npm publish ./npm --access public
 
   website:
-    if: needs.version-changed.outputs.should_publish == 'true' && needs.version-changed.outputs.registries_only != 'true'
+    if: >-
+      always()
+      && !cancelled()
+      && needs.version-changed.outputs.should_publish == 'true'
+      && needs.ship.result == 'success'
     needs: [test, version-changed, ship]
     uses: ./.github/workflows/docs.yml
     secrets: inherit
