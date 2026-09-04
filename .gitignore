@@ -1,4 +1,6 @@
 /target
+/dist
+/SHA256SUMS
 /site
 __pycache__/
 *.pyc
