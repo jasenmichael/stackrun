@@ -1,6 +1,6 @@
 {
   "name": "stackrun",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Run multiple local services with optional Cloudflare tunnels, including stable HTTPS hosts for OAuth callback URLs",
   "keywords": [
     "bash",
