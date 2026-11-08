@@ -1,12 +1,15 @@
 ---
 id: tunnels
 sidebar_position: 6
-title: Tunnels
+title: Cloudflare tunnels for local OAuth
+description: Use a named Cloudflare tunnel so local apps keep a stable HTTPS callback URL for OAuth, OIDC, and SSO. Quick tunnels are fine for a one-off share.
 ---
 
 A command with no `tunnel` key has no `cloudflared` sibling.
 
-Auth providers (OAuth, OIDC, SSO) only redirect to callback URLs you registered. Localhost is often blocked or HTTP-only; the provider also cannot reach `127.0.0.1` from the internet. Set `public` to a hostname on your zone so the local command has a stable HTTPS origin that matches the dashboard. Quick tunnels change host every run, so they are a poor fit for a fixed callback.
+Tunnels are especially useful when developing apps that use OAuth, OIDC, SSO, or other authentication services that require a fixed HTTPS callback URL.
+
+Stackrun can expose your local app through a Cloudflare tunnel, letting you test authentication against your local code using the same URL registered with your auth provider. A named tunnel keeps that URL consistent between runs, so you don't need to deploy the app or constantly update callback URLs just to test login. Quick tunnels are fine for a one-off share; named hosts are what you want when the callback is fixed.
 
 | Field | Description |
 | --- | --- |

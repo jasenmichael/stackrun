@@ -2,19 +2,22 @@
 slug: /
 id: intro
 sidebar_position: 1
-title: 🥞 stackrun 🏃
+title: stackrun — run commands in parallel
+description: stackrun is a concurrently alternative for running local commands in parallel, with Cloudflare tunnels for stable HTTPS OAuth callback URLs.
 ---
 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
-# 🥞 stackrun 🏃
+# stackrun — run commands in parallel
 
-stackrun is a process-orchestration CLI. It is an alternative to running a local stack with [concurrently](https://www.npmjs.com/package/concurrently), [npm-run-all2](https://www.npmjs.com/package/npm-run-all2), [Wireit](https://github.com/google/wireit), or native shell operators (`&`, `wait`, `&&`).
+stackrun is a process-orchestration CLI for running multiple local services in parallel. It is an alternative to [concurrently](https://www.npmjs.com/package/concurrently), [npm-run-all2](https://www.npmjs.com/package/npm-run-all2), [Wireit](https://github.com/google/wireit), or native shell operators (`&`, `wait`, `&&`), with optional Cloudflare tunnels and stable HTTPS hosts for OAuth callback URLs.
 
-Those tools stay inside npm scripts or a single shell. stackrun is a standalone binary: any language, prefixed logs, `before` / `after` hooks, and optional Cloudflare tunnels.
+Those tools stay inside npm scripts or a single shell. stackrun is a standalone binary: any language, prefixed logs, `before` / `after` hooks, and named or quick Cloudflare tunnels.
 
-Tunnels are built for local authentication as much as for sharing a stack. OAuth, OIDC, and SSO providers redirect the browser only to callback URLs you registered — exact scheme, host, and path. Many reject `http://localhost`, require HTTPS, or cannot reach a process that exists only on loopback. A named tunnel (`public`) gives the local web or API a stable `https://…` host that matches the dashboard entry, so login completes against the processes on your laptop. You keep one callback URL instead of deploying to test auth, or re-registering a new `*.trycloudflare.com` host every run. Quick tunnels are fine for a one-off share; named hosts are what you want when the callback is fixed.
+Tunnels are especially useful when developing apps that use OAuth, OIDC, SSO, or other authentication services that require a fixed HTTPS callback URL.
+
+Stackrun can expose your local app through a Cloudflare tunnel, letting you test authentication against your local code using the same URL registered with your auth provider. A named tunnel keeps that URL consistent between runs, so you don't need to deploy the app or constantly update callback URLs just to test login. Quick tunnels are fine for a one-off share; named hosts are what you want when the callback is fixed.
 
 Commands are opaque processes. Python, Node, Go, shell, or any executable works. Node evaluates JS/TS config files and, in the npm package, shims `stackrun` / `import { stackrun }`.
 

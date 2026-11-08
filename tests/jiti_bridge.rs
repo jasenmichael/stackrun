@@ -47,6 +47,19 @@ fn which_bin(name: &str) -> Option<PathBuf> {
 }
 
 #[test]
+fn ci_requires_repo_jiti() {
+    if std::env::var_os("CI").is_none() {
+        return;
+    }
+    assert!(
+        jiti_available(),
+        "CI rust tests need jiti importable from the repo root. Run npm ci so import(\"jiti\") works; \
+         mocked npx tests need that local module. Product fallback is npx -p jiti@2 when --jiti npx \
+         or STACKRUN_JITI=npx."
+    );
+}
+
+#[test]
 fn loads_js_and_ts_via_jiti_when_available() {
     if !jiti_available() {
         eprintln!("skip: node + jiti not available");

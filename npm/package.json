@@ -1,7 +1,17 @@
 {
   "name": "stackrun",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Run multiple local services with optional Cloudflare tunnels, including stable HTTPS hosts for OAuth callback URLs",
+  "keywords": [
+    "bash",
+    "concurrent",
+    "parallel",
+    "concurrently",
+    "command",
+    "sh",
+    "cloudflare",
+    "tunnel"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",

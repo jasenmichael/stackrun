@@ -2,6 +2,7 @@
 id: configuration
 sidebar_position: 5
 title: Configuration
+description: Configure stackrun with YAML, TOML, JSON, or JS/TS to orchestrate monorepo scripts and local processes.
 ---
 
 ## Formats
